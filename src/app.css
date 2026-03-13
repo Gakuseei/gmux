@@ -9,6 +9,12 @@
   --diff-add: #212922;
   --diff-delete: #3c170f;
   --notification: #3b82f6;
+  --color-error: #ef4444;
+  --color-warning: #f59e0b;
+  --color-success: #22c55e;
+  --font-code: "JetBrains Mono", monospace;
+  --font-ui: Inter, system-ui, -apple-system, sans-serif;
+  --font-size: 14px;
   --radius-container: 8px;
   --radius-button: 6px;
 }

@@ -6,6 +6,11 @@ use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
 
+#[tauri::command]
+pub fn get_default_shell() -> String {
+    std::env::var("SHELL").unwrap_or_else(|_| "/bin/bash".to_string())
+}
+
 #[derive(serde::Serialize)]
 pub struct SystemInfo {
     pub os: String,
@@ -79,7 +84,10 @@ fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, on_event: Channel<Termi
                         })
                         .ok();
                 }
-                Err(_) => break,
+                Err(_) => {
+                    on_event.send(TerminalEvent::Exit { code: None }).ok();
+                    break;
+                }
             }
         }
     });
@@ -118,7 +126,9 @@ pub fn kill_pty(
     let mut manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
     manager
         .kill(&id)
-        .map_err(|e: anyhow::Error| e.to_string())
+        .map_err(|e: anyhow::Error| e.to_string())?;
+    manager.remove(&id);
+    Ok(())
 }
 
 #[derive(serde::Deserialize)]
@@ -165,7 +175,15 @@ fn spawn_batch_reader_thread(
                         })
                         .ok();
                 }
-                Err(_) => break,
+                Err(_) => {
+                    on_event
+                        .send(BatchTerminalEvent {
+                            index,
+                            event: TerminalEvent::Exit { code: None },
+                        })
+                        .ok();
+                    break;
+                }
             }
         }
     });

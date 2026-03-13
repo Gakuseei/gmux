@@ -26,7 +26,8 @@ class UsageStore {
 		this.loading = true;
 		try {
 			this.data = await invoke<UsageData>('get_usage_data', { period: this.period });
-		} catch {
+		} catch (e) {
+			console.error('Failed to load usage data:', e);
 			this.data = null;
 		}
 		this.loading = false;

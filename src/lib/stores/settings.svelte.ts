@@ -8,9 +8,9 @@ class SettingsStore {
 		fontSize: 14,
 	});
 	terminal = $state({
-		defaultShell: '/bin/bash',
+		defaultShell: '',
 		scrollbackLines: 10000,
-		cursorStyle: 'block' as 'block' | 'beam' | 'underline',
+		cursorStyle: 'block' as 'block' | 'bar' | 'underline',
 	});
 	aiClis = $state({
 		claude: { path: 'claude', enabled: true },
@@ -52,7 +52,17 @@ class SettingsStore {
 				if (parsed.notifications) Object.assign(this.notifications, parsed.notifications);
 				if (parsed.keybindings) Object.assign(this.keybindings, parsed.keybindings);
 			}
-		} catch {
+		} catch (e) {
+			console.error('Failed to load settings:', e);
+		}
+
+		if (!this.terminal.defaultShell) {
+			try {
+				this.terminal.defaultShell = await invoke<string>('get_default_shell');
+			} catch (e) {
+				console.error('Failed to detect default shell:', e);
+				this.terminal.defaultShell = '/bin/bash';
+			}
 		}
 	}
 
@@ -67,7 +77,8 @@ class SettingsStore {
 		});
 		try {
 			await invoke('save_settings', { data });
-		} catch {
+		} catch (e) {
+			console.error('Failed to save settings:', e);
 		}
 	}
 

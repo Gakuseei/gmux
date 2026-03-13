@@ -129,6 +129,15 @@
 								</svg>
 							</button>
 							<button
+								class="icon-action"
+								title="Unstage"
+								onclick={(e: MouseEvent) => { e.stopPropagation(); gitStore.unstageFile(file.path); }}
+							>
+								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+									<path d="M18 6L6 18M6 6l12 12" />
+								</svg>
+							</button>
+							<button
 								class="icon-action danger"
 								title="Revert"
 								onclick={(e: MouseEvent) => { e.stopPropagation(); gitStore.revertFile(file.path); }}
@@ -184,7 +193,7 @@
 		font-size: 12px;
 		padding: 5px 8px;
 		border-radius: var(--radius-button);
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-family: var(--font-code);
 		cursor: pointer;
 		outline: none;
 	}
@@ -315,7 +324,7 @@
 	}
 
 	.file-status {
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-family: var(--font-code);
 		font-size: 11px;
 		font-weight: 700;
 		width: 16px;
@@ -344,14 +353,14 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-family: var(--font-code);
 		font-size: 12px;
 	}
 
 	.file-stats {
 		display: flex;
 		gap: 6px;
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-family: var(--font-code);
 		font-size: 11px;
 		flex-shrink: 0;
 	}

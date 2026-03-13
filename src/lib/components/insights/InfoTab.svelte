@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { invoke } from '@tauri-apps/api/core';
+	import { getVersion } from '@tauri-apps/api/app';
 	import { appStore } from '$lib/stores/app.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 
 	interface SystemInfo {
 		os: string;
@@ -15,15 +17,16 @@
 		installed: boolean;
 	}
 
-	const AI_CLIS = [
-		{ name: 'Claude Code', command: 'claude' },
-		{ name: 'GitHub Copilot', command: 'gh' },
-		{ name: 'Aider', command: 'aider' },
-		{ name: 'Cursor', command: 'cursor' },
-	];
+	let cliDefs = $derived([
+		{ name: 'Claude Code', command: settingsStore.aiClis.claude.path },
+		{ name: 'Codex CLI', command: settingsStore.aiClis.codex.path },
+		{ name: 'Gemini CLI', command: settingsStore.aiClis.gemini.path },
+		...settingsStore.aiClis.custom.map((c) => ({ name: c.name, command: c.command })),
+	]);
 
 	let systemInfo = $state<SystemInfo | null>(null);
 	let cliStatuses = $state<CliStatus[]>([]);
+	let appVersion = $state('');
 	let loading = $state(true);
 
 	let activeWorkspaceCount = $derived(appStore.workspaces.length);
@@ -34,18 +37,20 @@
 	async function loadSystemInfo() {
 		try {
 			systemInfo = await invoke<SystemInfo>('get_system_info');
-		} catch {
+		} catch (e) {
+			console.error('Failed to load system info:', e);
 			systemInfo = { os: 'unknown', arch: 'unknown', hostname: 'unknown' };
 		}
 	}
 
 	async function loadCliStatuses() {
 		const results = await Promise.all(
-			AI_CLIS.map(async (cli) => {
+			cliDefs.map(async (cli) => {
 				let installed = false;
 				try {
 					installed = await invoke<boolean>('check_cli_exists', { command: cli.command });
-				} catch {
+				} catch (e) {
+					console.error(`Failed to check CLI ${cli.command}:`, e);
 					installed = false;
 				}
 				return { name: cli.name, command: cli.command, installed };
@@ -54,8 +59,17 @@
 		cliStatuses = results;
 	}
 
+	async function loadVersion() {
+		try {
+			appVersion = await getVersion();
+		} catch (e) {
+			console.error('Failed to get app version:', e);
+			appVersion = 'unknown';
+		}
+	}
+
 	onMount(async () => {
-		await Promise.all([loadSystemInfo(), loadCliStatuses()]);
+		await Promise.all([loadSystemInfo(), loadCliStatuses(), loadVersion()]);
 		loading = false;
 	});
 </script>
@@ -68,7 +82,7 @@
 			<h3>Application</h3>
 			<div class="info-grid">
 				<span class="info-label">Version</span>
-				<span class="info-value mono">0.1.0</span>
+				<span class="info-value mono">{appVersion}</span>
 			</div>
 		</section>
 
@@ -154,7 +168,7 @@
 	}
 
 	.mono {
-		font-family: 'JetBrains Mono', monospace;
+		font-family: var(--font-code);
 	}
 
 	.cli-list {

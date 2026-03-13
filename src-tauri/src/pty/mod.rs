@@ -3,17 +3,12 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 
-#[allow(dead_code)]
 pub struct PtyInstance {
-    pub id: String,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
     master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
-    pub working_dir: String,
-    pub command: String,
 }
 
-#[allow(dead_code)]
 impl PtyInstance {
     pub fn write(&self, data: &[u8]) -> anyhow::Result<()> {
         self.writer
@@ -44,21 +39,12 @@ impl PtyInstance {
         Ok(())
     }
 
-    pub fn is_alive(&self) -> bool {
-        self.child
-            .lock()
-            .ok()
-            .and_then(|mut c| c.try_wait().ok())
-            .map(|status| status.is_none())
-            .unwrap_or(false)
-    }
 }
 
 pub struct PtyManager {
     instances: HashMap<String, PtyInstance>,
 }
 
-#[allow(dead_code)]
 impl PtyManager {
     pub fn new() -> Self {
         Self {
@@ -97,12 +83,9 @@ impl PtyManager {
         let id = uuid::Uuid::new_v4().to_string();
 
         let instance = PtyInstance {
-            id: id.clone(),
             writer: Arc::new(Mutex::new(writer)),
             master: Arc::new(Mutex::new(pair.master)),
             child: Arc::new(Mutex::new(child)),
-            working_dir: cwd.to_string(),
-            command: shell.to_string(),
         };
 
         self.instances.insert(id.clone(), instance);
@@ -133,9 +116,5 @@ impl PtyManager {
 
     pub fn remove(&mut self, id: &str) {
         self.instances.remove(id);
-    }
-
-    pub fn list(&self) -> Vec<String> {
-        self.instances.keys().cloned().collect()
     }
 }

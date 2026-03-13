@@ -26,7 +26,8 @@ class StatusStore {
 		try {
 			const branch = await invoke<string | null>('get_current_branch', { path: cwd });
 			if (branch) this.gitBranch = branch;
-		} catch {
+		} catch (e) {
+			console.error('Failed to update git branch:', e);
 			this.gitBranch = '\u2013';
 		}
 	}

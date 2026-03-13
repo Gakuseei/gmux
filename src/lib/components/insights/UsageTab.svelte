@@ -1,14 +1,17 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { usageStore } from '$lib/stores/usage.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 
-	const INPUT_COST_PER_M = 3;
-	const OUTPUT_COST_PER_M = 15;
-	const CACHE_READ_COST_PER_M = 0.3;
-	const CACHE_WRITE_COST_PER_M = 3.75;
+	const COST_RATES: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
+		claude: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+		codex: { input: 2.5, output: 10, cacheRead: 0.25, cacheWrite: 3 },
+		gemini: { input: 1.25, output: 5, cacheRead: 0.3, cacheWrite: 1.25 },
+	};
 
-	const FIVE_HOUR_LIMIT = 1_000_000;
-	const WEEKLY_LIMIT = 5_000_000;
+	let rates = $derived(COST_RATES.claude);
+	let fiveHourLimit = $derived(settingsStore.rateLimits.claude.fiveHourLimit);
+	let weeklyLimit = $derived(settingsStore.rateLimits.claude.weeklyLimit);
 
 	function cost(tokens: number, rate: number): number {
 		return (tokens / 1_000_000) * rate;
@@ -25,7 +28,7 @@
 	}
 
 	function totalCost(input: number, output: number, cacheRead: number, cacheWrite: number): number {
-		return cost(input, INPUT_COST_PER_M) + cost(output, OUTPUT_COST_PER_M) + cost(cacheRead, CACHE_READ_COST_PER_M) + cost(cacheWrite, CACHE_WRITE_COST_PER_M);
+		return cost(input, rates.input) + cost(output, rates.output) + cost(cacheRead, rates.cacheRead) + cost(cacheWrite, rates.cacheWrite);
 	}
 
 	function fiveHourUsage(): number {
@@ -58,9 +61,10 @@
 	}
 
 	function progressColor(pct: number): string {
-		if (pct >= 90) return '#ef4444';
-		if (pct >= 70) return '#f59e0b';
-		return 'var(--accent)';
+		const style = getComputedStyle(document.documentElement);
+		if (pct >= 90) return style.getPropertyValue('--color-error').trim() || '#ef4444';
+		if (pct >= 70) return style.getPropertyValue('--color-warning').trim() || '#f59e0b';
+		return style.getPropertyValue('--accent').trim() || '#10a37f';
 	}
 
 	function formatMinutes(mins: number): string {
@@ -115,22 +119,22 @@
 					<tr>
 						<td>Input</td>
 						<td class="mono">{formatTokens(d.total_input)}</td>
-						<td class="mono">{formatCost(cost(d.total_input, INPUT_COST_PER_M))}</td>
+						<td class="mono">{formatCost(cost(d.total_input, rates.input))}</td>
 					</tr>
 					<tr>
 						<td>Output</td>
 						<td class="mono">{formatTokens(d.total_output)}</td>
-						<td class="mono">{formatCost(cost(d.total_output, OUTPUT_COST_PER_M))}</td>
+						<td class="mono">{formatCost(cost(d.total_output, rates.output))}</td>
 					</tr>
 					<tr>
 						<td>Cache Read</td>
 						<td class="mono">{formatTokens(d.total_cache_read)}</td>
-						<td class="mono">{formatCost(cost(d.total_cache_read, CACHE_READ_COST_PER_M))}</td>
+						<td class="mono">{formatCost(cost(d.total_cache_read, rates.cacheRead))}</td>
 					</tr>
 					<tr>
 						<td>Cache Write</td>
 						<td class="mono">{formatTokens(d.total_cache_write)}</td>
-						<td class="mono">{formatCost(cost(d.total_cache_write, CACHE_WRITE_COST_PER_M))}</td>
+						<td class="mono">{formatCost(cost(d.total_cache_write, rates.cacheWrite))}</td>
 					</tr>
 					<tr class="total-row">
 						<td>Total</td>
@@ -146,10 +150,10 @@
 			<div class="rate-limit-item">
 				<div class="rate-label">
 					<span>5h Window</span>
-					<span class="rate-stats">{formatTokens(fiveHourUsage())} / {formatTokens(FIVE_HOUR_LIMIT)}</span>
+					<span class="rate-stats">{formatTokens(fiveHourUsage())} / {formatTokens(fiveHourLimit)}</span>
 				</div>
 				<div class="progress-bar">
-					<div class="progress-fill" style:width="{progressPercent(fiveHourUsage(), FIVE_HOUR_LIMIT)}%" style:background={progressColor(progressPercent(fiveHourUsage(), FIVE_HOUR_LIMIT))}></div>
+					<div class="progress-fill" style:width="{progressPercent(fiveHourUsage(), fiveHourLimit)}%" style:background={progressColor(progressPercent(fiveHourUsage(), fiveHourLimit))}></div>
 				</div>
 				{#if fiveHourResetMinutes() > 0}
 					<span class="reset-text">Resets in {formatMinutes(fiveHourResetMinutes())}</span>
@@ -159,10 +163,10 @@
 			<div class="rate-limit-item">
 				<div class="rate-label">
 					<span>Weekly</span>
-					<span class="rate-stats">{formatTokens(weeklyUsage())} / {formatTokens(WEEKLY_LIMIT)}</span>
+					<span class="rate-stats">{formatTokens(weeklyUsage())} / {formatTokens(weeklyLimit)}</span>
 				</div>
 				<div class="progress-bar">
-					<div class="progress-fill" style:width="{progressPercent(weeklyUsage(), WEEKLY_LIMIT)}%" style:background={progressColor(progressPercent(weeklyUsage(), WEEKLY_LIMIT))}></div>
+					<div class="progress-fill" style:width="{progressPercent(weeklyUsage(), weeklyLimit)}%" style:background={progressColor(progressPercent(weeklyUsage(), weeklyLimit))}></div>
 				</div>
 			</div>
 		</section>
@@ -307,7 +311,7 @@
 	}
 
 	.token-table .mono {
-		font-family: 'JetBrains Mono', monospace;
+		font-family: var(--font-code);
 		text-align: right;
 	}
 
@@ -343,7 +347,7 @@
 	}
 
 	.rate-stats {
-		font-family: 'JetBrains Mono', monospace;
+		font-family: var(--font-code);
 		font-size: 11px;
 		color: var(--text-secondary);
 	}
@@ -400,13 +404,13 @@
 	}
 
 	.session-id {
-		font-family: 'JetBrains Mono', monospace;
+		font-family: var(--font-code);
 		font-size: 12px;
 		color: var(--text-primary);
 	}
 
 	.session-cost {
-		font-family: 'JetBrains Mono', monospace;
+		font-family: var(--font-code);
 		font-size: 12px;
 		color: var(--accent);
 		font-weight: 600;
@@ -417,7 +421,7 @@
 		gap: 12px;
 		font-size: 11px;
 		color: var(--text-secondary);
-		font-family: 'JetBrains Mono', monospace;
+		font-family: var(--font-code);
 	}
 
 	.loading-state,

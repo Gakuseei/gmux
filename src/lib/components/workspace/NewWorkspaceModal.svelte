@@ -1,7 +1,9 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/app.svelte';
 	import { recentPathsStore } from '$lib/stores/recent-paths.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { generateLayout } from '$lib/utils/layout-helpers';
+	import { spawnBatch } from '$lib/components/terminal/terminal-bridge';
 	import PathPicker from './PathPicker.svelte';
 	import LayoutPicker from './LayoutPicker.svelte';
 	import AgentPicker from './AgentPicker.svelte';
@@ -66,7 +68,8 @@
 		}
 	}
 
-	function launch() {
+	async function launch() {
+		const defaultShell = settingsStore.terminal.defaultShell || '/bin/bash';
 		const sessions: TerminalSession[] = [];
 
 		for (const agent of agents) {
@@ -74,7 +77,7 @@
 				sessions.push({
 					id: crypto.randomUUID(),
 					name: agent.count > 1 ? `${agent.label} ${i + 1}` : agent.label,
-					shell: '',
+					shell: defaultShell,
 					cwd: cwd || '~',
 					command: buildCommand(agent) || undefined,
 					bypassPermissions: agent.type === 'claude' ? agent.bypassPermissions : undefined,
@@ -89,7 +92,7 @@
 			sessions.push({
 				id: crypto.randomUUID(),
 				name: `Shell ${sessions.length + 1}`,
-				shell: '',
+				shell: defaultShell,
 				cwd: cwd || '~',
 				status: 'ready',
 				notificationCount: 0
@@ -108,6 +111,30 @@
 		};
 
 		appStore.addWorkspace(workspace);
+
+		try {
+			const batchRequests = sessions.map((s) => ({
+				shell: s.shell,
+				cwd: s.cwd,
+				command: s.command,
+				cols: 80,
+				rows: 24,
+			}));
+
+			const callbacks = sessions.map(() => ({
+				onData: () => {},
+				onExit: () => {},
+			}));
+
+			const ptyIds = await spawnBatch(batchRequests, callbacks);
+			ptyIds.forEach((ptyId, i) => {
+				if (sessions[i]) {
+					sessions[i].ptyId = ptyId;
+				}
+			});
+		} catch (e) {
+			console.error('Failed to spawn batch PTYs:', e);
+		}
 
 		if (cwd) {
 			recentPathsStore.addPath(cwd);

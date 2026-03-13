@@ -3,18 +3,21 @@
 	import { FitAddon } from '@xterm/addon-fit';
 	import { WebglAddon } from '@xterm/addon-webgl';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
+	import { SearchAddon } from '@xterm/addon-search';
 	import '@xterm/xterm/css/xterm.css';
 	import { createPty, writePty, resizePty, killPty } from './terminal-bridge';
 	import { appStore } from '$lib/stores/app.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { notifications } from '$lib/stores/notifications.svelte';
 	import { statusStore } from '$lib/stores/status.svelte';
 	import { detectNotification, createLineBuffer } from '$lib/utils/notification-detector';
 
 	let {
 		terminalId,
-		shell = '/bin/bash',
+		shell,
 		cwd,
 		command,
+		existingPtyId,
 		onTitleChange,
 		onData
 	}: {
@@ -22,6 +25,7 @@
 		shell?: string;
 		cwd: string;
 		command?: string;
+		existingPtyId?: string;
 		onTitleChange?: (title: string) => void;
 		onData?: (data: string) => void;
 	} = $props();
@@ -45,6 +49,41 @@
 	let containerEl: HTMLDivElement | undefined = $state();
 	let ptyId: string | null = $state(null);
 	let isAlive: boolean = $state(false);
+	let searchAddon: SearchAddon | null = $state(null);
+	let showSearch = $state(false);
+	let searchQuery = $state('');
+	let searchInput: HTMLInputElement | undefined = $state();
+	let spawnError: string | null = $state(null);
+
+	function toggleSearch() {
+		showSearch = !showSearch;
+		if (showSearch) {
+			requestAnimationFrame(() => searchInput?.focus());
+		}
+	}
+
+	$effect(() => {
+		const handler = () => {
+			if (appStore.activeTerminalId === terminalId) {
+				toggleSearch();
+			}
+		};
+		window.addEventListener('gmux-toggle-search', handler);
+		return () => window.removeEventListener('gmux-toggle-search', handler);
+	});
+
+	function handleSearchKeydown(e: KeyboardEvent) {
+		if (e.key === 'Enter') {
+			if (e.shiftKey) {
+				searchAddon?.findPrevious(searchQuery);
+			} else {
+				searchAddon?.findNext(searchQuery);
+			}
+		}
+		if (e.key === 'Escape') {
+			showSearch = false;
+		}
+	}
 
 	$effect(() => {
 		if (!containerEl) return;
@@ -56,28 +95,41 @@
 		let disposed = false;
 
 		const setup = async () => {
+			const resolvedShell = shell || settingsStore.terminal.defaultShell || '/bin/bash';
+
+			const computedStyle = getComputedStyle(document.documentElement);
+			const bgColor = computedStyle.getPropertyValue('--bg-primary').trim() || '#171717';
+			const fgColor = computedStyle.getPropertyValue('--text-primary').trim() || '#e5e5e5';
+			const accentColor = computedStyle.getPropertyValue('--accent').trim() || '#10a37f';
+
 			term = new Terminal({
-				fontFamily: 'JetBrains Mono, monospace',
-				fontSize: 14,
+				fontFamily: settingsStore.appearance.fontCode,
+				fontSize: settingsStore.appearance.fontSize,
 				theme: {
-					background: '#171717',
-					foreground: '#e5e5e5',
-					cursor: '#10a37f',
-					selectionBackground: 'rgba(16, 163, 127, 0.3)'
+					background: bgColor,
+					foreground: fgColor,
+					cursor: accentColor,
+					selectionBackground: `${accentColor}4d`
 				},
 				cursorBlink: true,
+				cursorStyle: settingsStore.terminal.cursorStyle,
+				scrollback: settingsStore.terminal.scrollbackLines,
 				allowProposedApi: true
 			});
 
 			fitAddon = new FitAddon();
+			const search = new SearchAddon();
+			searchAddon = search;
 			term.loadAddon(fitAddon);
+			term.loadAddon(search);
 			term.loadAddon(new WebLinksAddon());
 
 			term.open(containerEl!);
 
 			try {
 				term.loadAddon(new WebglAddon());
-			} catch {
+			} catch (e) {
+				console.error('WebGL addon failed, using canvas fallback:', e);
 			}
 
 			fitAddon.fit();
@@ -88,46 +140,57 @@
 
 			const decoder = new TextDecoder();
 
-			const id = await createPty(
-				shell,
-				cwd,
-				term.cols,
-				term.rows,
-				(data) => {
-					if (disposed || !term) return;
-					term.write(data);
-					const text = decoder.decode(data, { stream: true });
-					lineBuffer(text);
-					if (onData) {
-						onData(text);
+			if (existingPtyId) {
+				ptyId = existingPtyId;
+				isAlive = true;
+			} else {
+				try {
+					const id = await createPty(
+						resolvedShell,
+						cwd,
+						term.cols,
+						term.rows,
+						(data) => {
+							if (disposed || !term) return;
+							term.write(data);
+							const text = decoder.decode(data, { stream: true });
+							lineBuffer(text);
+							if (onData) {
+								onData(text);
+							}
+						},
+						(_code) => {
+							isAlive = false;
+						}
+					);
+
+					if (disposed) {
+						killPty(id);
+						return;
 					}
-				},
-				(code) => {
-					isAlive = false;
+
+					ptyId = id;
+					isAlive = true;
+
+					if (command) {
+						setTimeout(() => {
+							if (ptyId && isAlive) {
+								writePty(ptyId, command + '\r');
+							}
+						}, 200);
+					}
+				} catch (e) {
+					spawnError = String(e);
+					console.error('PTY spawn failed:', e);
+					return;
 				}
-			);
-
-			if (disposed) {
-				killPty(id);
-				return;
 			}
-
-			ptyId = id;
-			isAlive = true;
 
 			term.onData((input) => {
 				if (ptyId && isAlive) {
 					writePty(ptyId, input);
 				}
 			});
-
-			if (command) {
-				setTimeout(() => {
-					if (ptyId && isAlive) {
-						writePty(ptyId, command + '\r');
-					}
-				}, 200);
-			}
 
 			resizeObserver = new ResizeObserver(() => {
 				if (resizeTimeout) clearTimeout(resizeTimeout);
@@ -147,7 +210,7 @@
 			if (resizeTimeout) clearTimeout(resizeTimeout);
 			if (resizeObserver) resizeObserver.disconnect();
 			if (term) term.dispose();
-			if (ptyId && isAlive) {
+			if (ptyId && isAlive && !existingPtyId) {
 				killPty(ptyId);
 			}
 		};
@@ -156,11 +219,106 @@
 
 <!-- svelte-ignore a11y_click_events_have_key_events -->
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div bind:this={containerEl} class="terminal-container" onclick={handleContainerClick}></div>
+<div class="terminal-wrapper" onclick={handleContainerClick}>
+	{#if spawnError}
+		<div class="spawn-error">
+			<span class="error-title">PTY spawn failed</span>
+			<span class="error-detail">{spawnError}</span>
+		</div>
+	{/if}
+	{#if showSearch}
+		<div class="search-bar">
+			<input
+				bind:this={searchInput}
+				bind:value={searchQuery}
+				class="search-input"
+				placeholder="Search..."
+				onkeydown={handleSearchKeydown}
+			/>
+			<button class="search-btn" onclick={() => searchAddon?.findPrevious(searchQuery)}>Prev</button>
+			<button class="search-btn" onclick={() => searchAddon?.findNext(searchQuery)}>Next</button>
+			<button class="search-btn" onclick={() => (showSearch = false)}>Close</button>
+		</div>
+	{/if}
+	<div bind:this={containerEl} class="terminal-container"></div>
+</div>
 
 <style>
-	.terminal-container {
+	.terminal-wrapper {
 		width: 100%;
 		height: 100%;
+		display: flex;
+		flex-direction: column;
+		position: relative;
+	}
+
+	.terminal-container {
+		width: 100%;
+		flex: 1;
+		min-height: 0;
+	}
+
+	.spawn-error {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		height: 100%;
+		gap: 8px;
+		padding: 20px;
+	}
+
+	.error-title {
+		color: var(--color-error, #ef4444);
+		font-size: 14px;
+		font-weight: 600;
+	}
+
+	.error-detail {
+		color: var(--text-secondary);
+		font-size: 12px;
+		font-family: var(--font-code);
+		max-width: 100%;
+		word-break: break-all;
+	}
+
+	.search-bar {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 8px;
+		background: var(--bg-surface);
+		border-bottom: 1px solid var(--border-color);
+		flex-shrink: 0;
+	}
+
+	.search-input {
+		flex: 1;
+		background: var(--bg-primary);
+		border: 1px solid var(--border-color);
+		border-radius: var(--radius-button);
+		color: var(--text-primary);
+		font-size: 12px;
+		padding: 3px 8px;
+		outline: none;
+	}
+
+	.search-input:focus {
+		border-color: var(--accent);
+	}
+
+	.search-btn {
+		background: none;
+		border: 1px solid var(--border-color);
+		color: var(--text-secondary);
+		font-size: 11px;
+		padding: 3px 8px;
+		border-radius: var(--radius-button);
+		cursor: pointer;
+	}
+
+	.search-btn:hover {
+		color: var(--text-primary);
+		border-color: var(--accent);
 	}
 </style>

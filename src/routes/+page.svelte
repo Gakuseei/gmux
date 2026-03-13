@@ -2,6 +2,7 @@
 	import { onMount } from 'svelte';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { persistence } from '$lib/stores/persistence.svelte';
+	import { getCurrentWindow } from '@tauri-apps/api/window';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
 	import StatusBar from '$lib/components/statusbar/StatusBar.svelte';
@@ -23,15 +24,36 @@
 			loaded = true;
 		});
 
-		const handleBeforeUnload = () => {
-			persistence.saveState();
-		};
-		window.addEventListener('beforeunload', handleBeforeUnload);
+		let unlistenClose: (() => void) | null = null;
+
+		getCurrentWindow().onCloseRequested(async () => {
+			await persistence.saveState();
+			const win = getCurrentWindow();
+			const size = await win.innerSize();
+			const pos = await win.innerPosition();
+			try {
+				const { invoke } = await import('@tauri-apps/api/core');
+				await invoke('save_app_state', {
+					data: JSON.stringify({
+						windowState: {
+							width: size.width,
+							height: size.height,
+							x: pos.x,
+							y: pos.y,
+						}
+					}),
+				});
+			} catch (e) {
+				console.error('Failed to save window state:', e);
+			}
+		}).then((fn) => {
+			unlistenClose = fn;
+		});
 
 		const cleanupKeybindings = initKeybindings();
 
 		return () => {
-			window.removeEventListener('beforeunload', handleBeforeUnload);
+			if (unlistenClose) unlistenClose();
 			cleanupKeybindings();
 		};
 	});

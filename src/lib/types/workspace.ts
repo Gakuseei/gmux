@@ -5,6 +5,7 @@ export interface TerminalSession {
 	cwd: string;
 	command?: string;
 	bypassPermissions?: boolean;
+	ptyId?: string;
 	status: 'running' | 'needs-input' | 'ready' | 'exited';
 	notificationCount: number;
 }

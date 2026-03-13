@@ -267,6 +267,47 @@ pub fn stage_file(path: String, file: String) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn unstage_file(path: String, file: String) -> Result<(), String> {
+    let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+    let head = repo.head().map_err(|e| e.to_string())?;
+    let tree = head.peel_to_tree().map_err(|e| e.to_string())?;
+    let mut index = repo.index().map_err(|e| e.to_string())?;
+
+    match tree.get_path(std::path::Path::new(&file)) {
+        Ok(entry) => {
+            let obj = repo.find_blob(entry.id()).map_err(|e| e.to_string())?;
+            index
+                .add_frombuffer(
+                    &git2::IndexEntry {
+                        ctime: git2::IndexTime::new(0, 0),
+                        mtime: git2::IndexTime::new(0, 0),
+                        dev: 0,
+                        ino: 0,
+                        mode: entry.filemode() as u32,
+                        uid: 0,
+                        gid: 0,
+                        file_size: obj.size() as u32,
+                        id: entry.id(),
+                        flags: 0,
+                        flags_extended: 0,
+                        path: file.as_bytes().to_vec(),
+                    },
+                    obj.content(),
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        Err(_) => {
+            index
+                .remove_path(std::path::Path::new(&file))
+                .map_err(|e| e.to_string())?;
+        }
+    }
+
+    index.write().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
 pub fn revert_file(path: String, file: String) -> Result<(), String> {
     let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
     let head = repo.head().map_err(|e| e.to_string())?;

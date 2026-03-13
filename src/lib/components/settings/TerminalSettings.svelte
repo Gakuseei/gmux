@@ -14,7 +14,7 @@
 		}
 	}
 
-	function setCursorStyle(style: 'block' | 'beam' | 'underline') {
+	function setCursorStyle(style: 'block' | 'bar' | 'underline') {
 		settingsStore.terminal.cursorStyle = style;
 		settingsStore.save();
 	}
@@ -50,11 +50,11 @@
 	<div class="field">
 		<span class="field-label">Cursor Style</span>
 		<div class="radio-group">
-			{#each ['block', 'beam', 'underline'] as style}
+			{#each ['block', 'bar', 'underline'] as style}
 				<button
 					class="radio-btn"
 					class:active={settingsStore.terminal.cursorStyle === style}
-					onclick={() => setCursorStyle(style as 'block' | 'beam' | 'underline')}
+					onclick={() => setCursorStyle(style as 'block' | 'bar' | 'underline')}
 				>
 					<span class="cursor-preview" data-style={style}></span>
 					{style}
@@ -147,7 +147,7 @@
 		background: var(--text-primary);
 	}
 
-	.cursor-preview[data-style='beam'] {
+	.cursor-preview[data-style='bar'] {
 		border-left: 2px solid var(--text-primary);
 	}
 

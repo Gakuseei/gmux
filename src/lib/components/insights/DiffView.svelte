@@ -93,7 +93,7 @@
 
 	.diff-filename {
 		font-size: 12px;
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-family: var(--font-code);
 		color: var(--text-primary);
 		flex: 1;
 		overflow: hidden;
@@ -105,7 +105,7 @@
 		display: flex;
 		gap: 8px;
 		font-size: 12px;
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-family: var(--font-code);
 	}
 
 	.stat-add {
@@ -119,7 +119,7 @@
 	.diff-content {
 		flex: 1;
 		overflow: auto;
-		font-family: 'JetBrains Mono', 'Fira Code', monospace;
+		font-family: var(--font-code);
 		font-size: 12px;
 		line-height: 1.5;
 	}

@@ -108,7 +108,9 @@ export function initKeybindings(): () => void {
 			toggleSidebar: () => {
 				appStore.toggleSidebar();
 			},
-			search: () => {},
+			search: () => {
+				window.dispatchEvent(new CustomEvent('gmux-toggle-search'));
+			},
 			nextPane: () => focusAdjacentPane(1),
 			prevPane: () => focusAdjacentPane(-1),
 		};

@@ -42,7 +42,8 @@ class GitStore {
 				invoke<FileStatus[]>('get_git_status', { path: this.repoPath })
 			]);
 			this.currentBranch = this.branches.find((b) => b.isCurrent)?.name ?? '';
-		} catch {
+		} catch (e) {
+			console.error('Failed to refresh git status:', e);
 			this.branches = [];
 			this.files = [];
 			this.currentBranch = '';
@@ -68,7 +69,8 @@ class GitStore {
 				path: this.repoPath,
 				file
 			});
-		} catch {
+		} catch (e) {
+			console.error('Failed to load file diff:', e);
 			this.fileDiff = null;
 		}
 	}
@@ -79,6 +81,15 @@ class GitStore {
 			await this.refresh();
 		} catch (e) {
 			console.error('Failed to stage file:', e);
+		}
+	}
+
+	async unstageFile(file: string) {
+		try {
+			await invoke('unstage_file', { path: this.repoPath, file });
+			await this.refresh();
+		} catch (e) {
+			console.error('Failed to unstage file:', e);
 		}
 	}
 

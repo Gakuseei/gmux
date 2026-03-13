@@ -85,7 +85,7 @@
 	}
 
 	.close-btn:hover {
-		color: #ef4444;
+		color: var(--color-error);
 		background: rgba(239, 68, 68, 0.15);
 	}
 </style>

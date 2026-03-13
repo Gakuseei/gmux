@@ -33,7 +33,7 @@
 		padding: 0 12px;
 		background: var(--bg-surface);
 		border-top: 1px solid var(--border-color);
-		font-family: 'JetBrains Mono', monospace;
+		font-family: var(--font-code);
 		font-size: 12px;
 		color: var(--text-secondary);
 		user-select: none;

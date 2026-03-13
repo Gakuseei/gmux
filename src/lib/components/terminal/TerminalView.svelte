@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/app.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { splitNode, removeNode } from '$lib/utils/layout-helpers';
 	import type { TerminalSession } from '$lib/types/workspace';
 	import SplitContainer from './SplitContainer.svelte';
@@ -11,7 +12,7 @@
 		const newSession: TerminalSession = {
 			id: crypto.randomUUID(),
 			name: `Terminal ${ws.sessions.length + 1}`,
-			shell: '/bin/fish',
+			shell: settingsStore.terminal.defaultShell,
 			cwd: ws.cwd,
 			status: 'running',
 			notificationCount: 0

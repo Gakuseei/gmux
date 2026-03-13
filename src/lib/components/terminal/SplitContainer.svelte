@@ -9,13 +9,15 @@
 		workspace,
 		onSplit,
 		onClose,
-		onTerminalData
+		onTerminalData,
+		onRatioChange
 	}: {
 		node: SplitNode;
 		workspace: Workspace;
 		onSplit: (terminalId: string, direction: 'horizontal' | 'vertical') => void;
 		onClose: (terminalId: string) => void;
 		onTerminalData?: (terminalId: string, data: string) => void;
+		onRatioChange?: (node: SplitNode, newRatio: number) => void;
 	} = $props();
 
 	let initialRatio = $derived(node.ratio ?? 0.5);
@@ -52,6 +54,11 @@
 			dragging = false;
 			window.removeEventListener('mousemove', onMouseMove);
 			window.removeEventListener('mouseup', onMouseUp);
+			const finalRatio = Math.min(0.9, Math.max(0.1, initialRatio + ratioOffset));
+			node.ratio = finalRatio;
+			if (onRatioChange) {
+				onRatioChange(node, finalRatio);
+			}
 		}
 
 		window.addEventListener('mousemove', onMouseMove);
@@ -75,6 +82,7 @@
 					shell={session.shell}
 					cwd={session.cwd}
 					command={session.command}
+					existingPtyId={session.ptyId}
 					onData={onTerminalData ? (data) => onTerminalData!(session.id, data) : undefined}
 				/>
 			</div>
@@ -95,6 +103,7 @@
 				{onSplit}
 				{onClose}
 				{onTerminalData}
+				{onRatioChange}
 			/>
 		</div>
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
@@ -113,6 +122,7 @@
 				{onSplit}
 				{onClose}
 				{onTerminalData}
+				{onRatioChange}
 			/>
 		</div>
 	</div>

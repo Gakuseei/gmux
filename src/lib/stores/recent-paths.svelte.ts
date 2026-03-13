@@ -1,10 +1,12 @@
+import { invoke } from '@tauri-apps/api/core';
+
 interface PathEntry {
 	path: string;
 	frequency: number;
 	lastUsed: string;
 }
 
-const STORAGE_KEY = 'gmux-recent-paths';
+const FILENAME = 'recent-paths.json';
 const MAX_PATHS = 10;
 
 class RecentPathsStore {
@@ -14,19 +16,33 @@ class RecentPathsStore {
 		this.load();
 	}
 
-	private load() {
+	private async load() {
 		try {
-			const raw = localStorage.getItem(STORAGE_KEY);
+			const raw = await invoke<string | null>('load_app_state');
 			if (raw) {
-				this.entries = JSON.parse(raw);
+				const parsed = JSON.parse(raw);
+				if (parsed.recentPaths && Array.isArray(parsed.recentPaths)) {
+					this.entries = parsed.recentPaths;
+				}
 			}
-		} catch {
+		} catch (e) {
+			console.error('Failed to load recent paths:', e);
 			this.entries = [];
 		}
 	}
 
-	private save() {
-		localStorage.setItem(STORAGE_KEY, JSON.stringify(this.entries));
+	private async save() {
+		try {
+			const existing = await invoke<string | null>('load_app_state');
+			let state: Record<string, unknown> = {};
+			if (existing) {
+				state = JSON.parse(existing);
+			}
+			state.recentPaths = this.entries;
+			await invoke('save_app_state', { data: JSON.stringify(state) });
+		} catch (e) {
+			console.error('Failed to save recent paths:', e);
+		}
 	}
 
 	private score(entry: PathEntry): number {

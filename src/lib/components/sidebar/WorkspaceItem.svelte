@@ -27,11 +27,12 @@
 	);
 
 	function statusColor(status: string): string {
+		const style = getComputedStyle(document.documentElement);
 		switch (status) {
 			case 'running':
-				return '#22c55e';
+				return style.getPropertyValue('--color-success').trim() || '#22c55e';
 			case 'needs-input':
-				return '#3b82f6';
+				return style.getPropertyValue('--notification').trim() || '#3b82f6';
 			case 'exited':
 				return '#6b7280';
 			default:
@@ -62,6 +63,13 @@
 		if (e.key === 'Enter') commitRename();
 		if (e.key === 'Escape') {
 			editing = false;
+		}
+	}
+
+	function handleDragStart(e: DragEvent) {
+		if (e.dataTransfer) {
+			e.dataTransfer.setData('text/plain', workspace.id);
+			e.dataTransfer.effectAllowed = 'move';
 		}
 	}
 
@@ -98,7 +106,7 @@
 	</button>
 {:else}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="workspace-item" class:active={isActive} oncontextmenu={handleContextMenu}>
+	<div class="workspace-item" class:active={isActive} oncontextmenu={handleContextMenu} draggable="true" ondragstart={handleDragStart}>
 		<button class="ws-header" onclick={() => appStore.setActiveWorkspace(workspace.id)}>
 			{#if editing}
 				<input

@@ -10,6 +10,28 @@
 	let editing = $state(false);
 	let editName = $state('');
 	let editInput = $state<HTMLInputElement | null>(null);
+	let dragOver = $state(false);
+
+	function handleDragOver(e: DragEvent) {
+		e.preventDefault();
+		if (e.dataTransfer) {
+			e.dataTransfer.dropEffect = 'move';
+		}
+		dragOver = true;
+	}
+
+	function handleDragLeave() {
+		dragOver = false;
+	}
+
+	function handleDrop(e: DragEvent) {
+		e.preventDefault();
+		dragOver = false;
+		const workspaceId = e.dataTransfer?.getData('text/plain');
+		if (workspaceId) {
+			appStore.moveWorkspaceToFolder(workspaceId, folder.id);
+		}
+	}
 
 	function handleContextMenu(e: MouseEvent) {
 		e.preventDefault();
@@ -43,7 +65,8 @@
 	]);
 </script>
 
-<div class="folder">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="folder" class:drag-over={dragOver} ondragover={handleDragOver} ondragleave={handleDragLeave} ondrop={handleDrop} role="group">
 	<button class="folder-header" onclick={() => appStore.toggleFolder(folder.id)} oncontextmenu={handleContextMenu}>
 		<span class="arrow">{folder.collapsed ? '\u25B6' : '\u25BC'}</span>
 		{#if editing}
@@ -85,6 +108,13 @@
 <style>
 	.folder {
 		margin: 2px 0;
+		border-radius: var(--radius-button);
+		transition: background 0.15s;
+	}
+
+	.folder.drag-over {
+		background: rgba(16, 163, 127, 0.1);
+		outline: 1px dashed var(--accent);
 	}
 
 	.folder-header {

@@ -62,9 +62,9 @@ export function parseStatusLine(line: string): Partial<StatusInfo> {
 
 	const ctxAbs = line.match(CONTEXT_ABSOLUTE);
 	if (ctxAbs) {
-		const used = ctxAbs[1].endsWith('k') ? parseNum(ctxAbs[1]) : parseNum(ctxAbs[1]);
-		const total = parseNum(ctxAbs[2]);
-		result.contextUsed = ctxAbs[0].includes('k') ? used : used;
+		const used = ctxAbs[1].endsWith('k') ? parseNum(ctxAbs[1]) * 1000 : parseNum(ctxAbs[1]);
+		const total = ctxAbs[2].endsWith('k') ? parseNum(ctxAbs[2]) * 1000 : parseNum(ctxAbs[2]);
+		result.contextUsed = used;
 		result.contextTotal = total;
 	}
 
