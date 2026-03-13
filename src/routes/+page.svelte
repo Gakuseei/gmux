@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/app.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
+	import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
 	import StatusBar from '$lib/components/statusbar/StatusBar.svelte';
 	import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
 </script>
@@ -10,7 +11,9 @@
 		<TopBar />
 	</div>
 
-	<div class="sidebar-area"></div>
+	<div class="sidebar-area">
+		<Sidebar />
+	</div>
 
 	<div class="content-area">
 		{#if appStore.activeView === 'terminals'}

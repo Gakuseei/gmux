@@ -44,6 +44,16 @@ class AppStore {
 		}
 	}
 
+	renameWorkspace(id: string, name: string) {
+		const ws = this.workspaces.find((w) => w.id === id);
+		if (ws) ws.name = name;
+	}
+
+	moveWorkspaceToFolder(workspaceId: string, folderId: string | undefined) {
+		const ws = this.workspaces.find((w) => w.id === workspaceId);
+		if (ws) ws.folderId = folderId;
+	}
+
 	setActiveWorkspace(id: string) {
 		this.activeWorkspaceId = id;
 	}
