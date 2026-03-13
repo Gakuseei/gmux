@@ -21,6 +21,7 @@ use iced::keyboard::{Event as KeyEvent, Key, Modifiers};
 use iced::mouse::{self, Button, Event as MouseEvent, ScrollDelta};
 use iced::{Color, Element, Font, Length, Pixels, Point, Rectangle, Size, Theme};
 
+use crate::mouse_reporter::{self, MouseButton, MouseEventType, MouseMode, MouseModifiers};
 use crate::terminal::{EventProxy, Terminal};
 use crate::theme::ColorScheme;
 
@@ -72,6 +73,7 @@ struct TerminalBoxState {
     scroll_pixels: f32,
     click: Option<(ClickKind, Instant)>,
     dragging: bool,
+    pressed_button: Option<Button>,
 }
 
 impl TerminalBoxState {
@@ -83,7 +85,35 @@ impl TerminalBoxState {
             scroll_pixels: 0.0,
             click: None,
             dragging: false,
+            pressed_button: None,
         }
+    }
+}
+
+fn iced_button_to_mouse_button(button: &Button) -> MouseButton {
+    match button {
+        Button::Left => MouseButton::Left,
+        Button::Middle => MouseButton::Middle,
+        Button::Right => MouseButton::Right,
+        _ => MouseButton::None,
+    }
+}
+
+fn mouse_modifiers_from_iced(modifiers: &Modifiers) -> MouseModifiers {
+    MouseModifiers {
+        shift: modifiers.shift(),
+        alt: modifiers.alt(),
+        ctrl: modifiers.control(),
+    }
+}
+
+fn detect_mouse_mode(term_mode: &TermMode) -> Option<MouseMode> {
+    if term_mode.contains(TermMode::SGR_MOUSE) {
+        Some(MouseMode::Sgr)
+    } else if term_mode.contains(TermMode::UTF8_MOUSE) {
+        Some(MouseMode::Utf8)
+    } else {
+        Some(MouseMode::Normal)
     }
 }
 
@@ -700,59 +730,127 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
                     }
                 }
             }
-            Event::Mouse(MouseEvent::ButtonPressed(Button::Left)) => {
+            Event::Mouse(MouseEvent::ButtonPressed(button)) => {
                 if let Some(p) = cursor.position_in(bounds) {
                     state.is_focused = true;
-                    state.dragging = true;
 
-                    let col = p.x / cell_width;
-                    let row = p.y / cell_height;
+                    let col = (p.x / cell_width) as usize;
+                    let row = (p.y / cell_height) as usize;
 
-                    let click_kind =
-                        if let Some((prev_kind, prev_time)) = state.click.take() {
-                            if prev_time.elapsed()
-                                < Duration::from_millis(CLICK_TIMING_MS)
-                            {
-                                match prev_kind {
-                                    ClickKind::Single => ClickKind::Double,
-                                    ClickKind::Double => ClickKind::Triple,
-                                    ClickKind::Triple => ClickKind::Single,
+                    let term_mode = *self.terminal.lock().mode();
+                    if term_mode.intersects(TermMode::MOUSE_MODE) {
+                        state.pressed_button = Some(*button);
+                        if let Some(mode) = detect_mouse_mode(&term_mode) {
+                            if let Some(encoded) = mouse_reporter::encode_mouse_event(
+                                MouseEventType::Press,
+                                iced_button_to_mouse_button(button),
+                                col,
+                                row,
+                                mouse_modifiers_from_iced(&state.modifiers),
+                                mode,
+                            ) {
+                                shell.publish((self.on_input)(encoded));
+                            }
+                        }
+                    } else if *button == Button::Left {
+                        state.dragging = true;
+
+                        let col_f = p.x / cell_width;
+                        let row_f = p.y / cell_height;
+
+                        let click_kind =
+                            if let Some((prev_kind, prev_time)) = state.click.take() {
+                                if prev_time.elapsed()
+                                    < Duration::from_millis(CLICK_TIMING_MS)
+                                {
+                                    match prev_kind {
+                                        ClickKind::Single => ClickKind::Double,
+                                        ClickKind::Double => ClickKind::Triple,
+                                        ClickKind::Triple => ClickKind::Single,
+                                    }
+                                } else {
+                                    ClickKind::Single
                                 }
                             } else {
                                 ClickKind::Single
-                            }
+                            };
+
+                        let location =
+                            TermPoint::new(Line(row_f as i32), TermColumn(col_f as usize));
+                        let side = if col_f.fract() < 0.5 {
+                            TermSide::Left
                         } else {
-                            ClickKind::Single
+                            TermSide::Right
                         };
 
-                    let location =
-                        TermPoint::new(Line(row as i32), TermColumn(col as usize));
-                    let side = if col.fract() < 0.5 {
-                        TermSide::Left
-                    } else {
-                        TermSide::Right
-                    };
+                        let selection_type = match click_kind {
+                            ClickKind::Single => SelectionType::Simple,
+                            ClickKind::Double => SelectionType::Semantic,
+                            ClickKind::Triple => SelectionType::Lines,
+                        };
 
-                    let selection_type = match click_kind {
-                        ClickKind::Single => SelectionType::Simple,
-                        ClickKind::Double => SelectionType::Semantic,
-                        ClickKind::Triple => SelectionType::Lines,
-                    };
+                        {
+                            let mut term = self.terminal.lock();
+                            term.selection =
+                                Some(Selection::new(selection_type, location, side));
+                        }
 
-                    {
-                        let mut term = self.terminal.lock();
-                        term.selection =
-                            Some(Selection::new(selection_type, location, side));
+                        state.click = Some((click_kind, Instant::now()));
                     }
-
-                    state.click = Some((click_kind, Instant::now()));
                 }
             }
-            Event::Mouse(MouseEvent::ButtonReleased(Button::Left)) => {
-                state.dragging = false;
+            Event::Mouse(MouseEvent::ButtonReleased(button)) => {
+                let term_mode = *self.terminal.lock().mode();
+                if term_mode.intersects(TermMode::MOUSE_MODE) {
+                    state.pressed_button = None;
+                    if let Some(p) = cursor.position_in(bounds) {
+                        let col = (p.x / cell_width) as usize;
+                        let row = (p.y / cell_height) as usize;
+                        if let Some(mode) = detect_mouse_mode(&term_mode) {
+                            if let Some(encoded) = mouse_reporter::encode_mouse_event(
+                                MouseEventType::Release,
+                                iced_button_to_mouse_button(button),
+                                col,
+                                row,
+                                mouse_modifiers_from_iced(&state.modifiers),
+                                mode,
+                            ) {
+                                shell.publish((self.on_input)(encoded));
+                            }
+                        }
+                    }
+                } else {
+                    state.dragging = false;
+                }
             }
             Event::Mouse(MouseEvent::CursorMoved { .. }) => {
-                if state.dragging {
+                let term_mode = *self.terminal.lock().mode();
+                let wants_motion = term_mode.contains(TermMode::MOUSE_MOTION)
+                    || (term_mode.contains(TermMode::MOUSE_DRAG) && state.pressed_button.is_some());
+
+                if term_mode.intersects(TermMode::MOUSE_MODE) && wants_motion {
+                    if let Some(p) = cursor.position_in(bounds) {
+                        let col = (p.x / cell_width) as usize;
+                        let row = (p.y / cell_height) as usize;
+                        let btn = state
+                            .pressed_button
+                            .as_ref()
+                            .map(iced_button_to_mouse_button)
+                            .unwrap_or(MouseButton::None);
+                        if let Some(mode) = detect_mouse_mode(&term_mode) {
+                            if let Some(encoded) = mouse_reporter::encode_mouse_event(
+                                MouseEventType::Motion,
+                                btn,
+                                col,
+                                row,
+                                mouse_modifiers_from_iced(&state.modifiers),
+                                mode,
+                            ) {
+                                shell.publish((self.on_input)(encoded));
+                            }
+                        }
+                    }
+                } else if state.dragging {
                     if let Some(p) = cursor.position_in(bounds) {
                         let col = p.x / cell_width;
                         let row = p.y / cell_height;
@@ -772,18 +870,77 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
                 }
             }
             Event::Mouse(MouseEvent::WheelScrolled { delta }) => {
-                if cursor.position_in(bounds).is_some() {
-                    let lines = match delta {
-                        ScrollDelta::Lines { y, .. } => (-y * SCROLL_MULTIPLIER) as i32,
-                        ScrollDelta::Pixels { y, .. } => {
-                            state.scroll_pixels -= y * SCROLL_MULTIPLIER;
-                            let lines = (state.scroll_pixels / cell_height) as i32;
-                            state.scroll_pixels -= lines as f32 * cell_height;
-                            lines
+                if let Some(p) = cursor.position_in(bounds) {
+                    let term_mode = *self.terminal.lock().mode();
+                    let in_alt = term_mode.contains(TermMode::ALT_SCREEN);
+                    let alt_scroll = term_mode.contains(TermMode::ALTERNATE_SCROLL);
+
+                    if term_mode.intersects(TermMode::MOUSE_MODE) {
+                        let scroll_lines = match delta {
+                            ScrollDelta::Lines { y, .. } => (-y * SCROLL_MULTIPLIER) as i32,
+                            ScrollDelta::Pixels { y, .. } => {
+                                state.scroll_pixels -= y * SCROLL_MULTIPLIER;
+                                let lines = (state.scroll_pixels / cell_height) as i32;
+                                state.scroll_pixels -= lines as f32 * cell_height;
+                                lines
+                            }
+                        };
+
+                        let col = (p.x / cell_width) as usize;
+                        let row = (p.y / cell_height) as usize;
+                        let count = scroll_lines.unsigned_abs();
+                        let event_type = if scroll_lines < 0 {
+                            MouseEventType::ScrollUp
+                        } else {
+                            MouseEventType::ScrollDown
+                        };
+
+                        if let Some(mode) = detect_mouse_mode(&term_mode) {
+                            for _ in 0..count {
+                                if let Some(encoded) = mouse_reporter::encode_mouse_event(
+                                    event_type,
+                                    MouseButton::None,
+                                    col,
+                                    row,
+                                    mouse_modifiers_from_iced(&state.modifiers),
+                                    mode,
+                                ) {
+                                    shell.publish((self.on_input)(encoded));
+                                }
+                            }
                         }
-                    };
-                    if lines != 0 {
-                        self.terminal_handle.scroll(lines);
+                    } else if in_alt && alt_scroll {
+                        let scroll_lines = match delta {
+                            ScrollDelta::Lines { y, .. } => (-y * SCROLL_MULTIPLIER) as i32,
+                            ScrollDelta::Pixels { y, .. } => {
+                                state.scroll_pixels -= y * SCROLL_MULTIPLIER;
+                                let lines = (state.scroll_pixels / cell_height) as i32;
+                                state.scroll_pixels -= lines as f32 * cell_height;
+                                lines
+                            }
+                        };
+                        let count = scroll_lines.unsigned_abs();
+                        let arrow = if scroll_lines < 0 {
+                            b"\x1bOA"
+                        } else {
+                            b"\x1bOB"
+                        };
+                        for _ in 0..count {
+                            shell.publish((self.on_input)(arrow.to_vec()));
+                        }
+                    } else {
+                        let lines = match delta {
+                            ScrollDelta::Lines { y, .. } => (-y * SCROLL_MULTIPLIER) as i32,
+                            ScrollDelta::Pixels { y, .. } => {
+                                state.scroll_pixels -= y * SCROLL_MULTIPLIER;
+                                let lines = (state.scroll_pixels / cell_height) as i32;
+                                state.scroll_pixels -= lines as f32 * cell_height;
+                                lines
+                            }
+                        };
+                        if lines != 0 {
+                            self.terminal_handle.scroll(lines);
+                        }
                     }
                 }
             }

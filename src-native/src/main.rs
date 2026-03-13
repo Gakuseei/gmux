@@ -8,6 +8,7 @@ use iced::widget::{button, column, container, pane_grid, row, scrollable, text, 
 use iced::{Background, Border, Element, Font, Length, Size, Theme};
 
 mod config;
+mod mouse_reporter;
 mod shortcuts;
 mod terminal;
 mod terminal_box;
