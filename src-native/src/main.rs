@@ -10,6 +10,7 @@ use iced::{Background, Border, Element, Font, Length, Size, Theme};
 mod config;
 mod mouse_reporter;
 mod notifications;
+mod scrollback;
 mod shortcuts;
 mod terminal;
 mod terminal_box;
@@ -209,6 +210,10 @@ impl App {
                             }
 
                             for idx in tab_exits.into_iter().rev() {
+                                let _ = scrollback::save_scrollback(
+                                    &content.tabs[idx].terminal.id,
+                                    &content.tabs[idx].terminal.grid_content(),
+                                );
                                 content.tabs.remove(idx);
                                 if content.active_tab >= content.tabs.len()
                                     && !content.tabs.is_empty()
@@ -356,6 +361,10 @@ impl App {
                     if should_remove_tab {
                         let became_empty = {
                             let content = ws.panes.get_mut(pane).unwrap();
+                            let _ = scrollback::save_scrollback(
+                                &content.tabs[idx].terminal.id,
+                                &content.tabs[idx].terminal.grid_content(),
+                            );
                             content.tabs.remove(idx);
                             if content.tabs.is_empty() {
                                 true

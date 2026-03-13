@@ -7,7 +7,7 @@ use std::thread;
 use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, Notifier, State as LoopState};
 use alacritty_terminal::grid::{Dimensions, Scroll};
-use alacritty_terminal::index::Column;
+use alacritty_terminal::index::{Column, Line};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::term::{Config as TermConfig, TermMode};
@@ -198,6 +198,33 @@ impl Terminal {
 
     pub fn try_recv_event(&mut self) -> Option<TerminalEvent> {
         self.event_rx.try_recv().ok()
+    }
+
+    pub fn grid_content(&self) -> String {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cols = grid.columns();
+        let top = grid.topmost_line();
+        let bottom = grid.bottommost_line();
+        let mut result = String::new();
+        let mut line = top;
+        while line <= bottom {
+            let row = &grid[line];
+            let mut row_text = String::with_capacity(cols);
+            for col_idx in 0..cols {
+                let cell = &row[Column(col_idx)];
+                if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                    continue;
+                }
+                row_text.push(cell.c);
+            }
+            result.push_str(row_text.trim_end());
+            if line < bottom {
+                result.push('\n');
+            }
+            line = Line(line.0 + 1);
+        }
+        result
     }
 
     pub fn last_line(&self) -> String {
