@@ -18,6 +18,12 @@ pub fn run() {
             commands::resize_pty,
             commands::kill_pty,
             commands::spawn_batch,
+            config::save_app_state,
+            config::load_app_state,
+            config::save_scrollback,
+            config::load_scrollback,
+            config::save_settings,
+            config::load_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

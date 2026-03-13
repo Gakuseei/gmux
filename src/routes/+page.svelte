@@ -1,10 +1,39 @@
 <script lang="ts">
+	import { onMount } from 'svelte';
 	import { appStore } from '$lib/stores/app.svelte';
+	import { persistence } from '$lib/stores/persistence.svelte';
 	import TopBar from '$lib/components/TopBar.svelte';
 	import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
 	import StatusBar from '$lib/components/statusbar/StatusBar.svelte';
 	import TerminalView from '$lib/components/terminal/TerminalView.svelte';
 	import NewWorkspaceModal from '$lib/components/workspace/NewWorkspaceModal.svelte';
+
+	let loaded = $state(false);
+
+	onMount(() => {
+		persistence.loadState().then(() => {
+			loaded = true;
+		});
+
+		const handleBeforeUnload = () => {
+			persistence.saveState();
+		};
+		window.addEventListener('beforeunload', handleBeforeUnload);
+
+		return () => {
+			window.removeEventListener('beforeunload', handleBeforeUnload);
+		};
+	});
+
+	$effect(() => {
+		if (!loaded) return;
+		JSON.stringify(appStore.workspaces);
+		JSON.stringify(appStore.folders);
+		appStore.sidebarWidth;
+		appStore.sidebarMinimized;
+		appStore.activeWorkspaceId;
+		persistence.scheduleSave();
+	});
 </script>
 
 <div class="app-shell" style:grid-template-columns="{appStore.sidebarMinimized ? '48px' : appStore.sidebarWidth + 'px'} 1fr">
