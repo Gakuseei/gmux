@@ -26,6 +26,13 @@ pub fn run() {
             config::save_settings,
             config::load_settings,
             git::get_current_branch,
+            git::get_branches,
+            git::switch_branch,
+            git::get_git_status,
+            git::get_file_diff,
+            git::stage_file,
+            git::revert_file,
+            usage::get_usage_data,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

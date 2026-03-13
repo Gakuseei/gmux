@@ -6,6 +6,7 @@
 	import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
 	import StatusBar from '$lib/components/statusbar/StatusBar.svelte';
 	import TerminalView from '$lib/components/terminal/TerminalView.svelte';
+	import InsightsView from '$lib/components/insights/InsightsView.svelte';
 	import NewWorkspaceModal from '$lib/components/workspace/NewWorkspaceModal.svelte';
 
 	let loaded = $state(false);
@@ -48,8 +49,8 @@
 	<div class="content-area">
 		{#if appStore.activeView === 'terminals'}
 			<TerminalView />
-		{:else}
-			<div class="insights-placeholder">Insights</div>
+		{:else if appStore.activeView === 'insights'}
+			<InsightsView />
 		{/if}
 	</div>
 
@@ -89,12 +90,4 @@
 		grid-column: 1 / -1;
 	}
 
-	.insights-placeholder {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		height: 100%;
-		color: var(--text-secondary);
-		font-size: 14px;
-	}
 </style>
