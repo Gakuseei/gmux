@@ -1,0 +1,24 @@
+[package]
+name = "gmux"
+version = "2.0.0"
+edition = "2021"
+default-run = "gmux"
+
+[dependencies]
+iced = { version = "0.14", features = ["tokio"] }
+alacritty_terminal = "0.25"
+cosmic-text = { version = "0.18", features = ["monospace_fallback", "shape-run-cache"] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ron = "0.12"
+git2 = "0.20"
+notify-rust = "4"
+dirs = "6"
+uuid = { version = "1", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+glob = "0.3"
+anyhow = "1"
+regex = "1"
+copypasta = "0.10"
+open = "5"
