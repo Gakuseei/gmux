@@ -7,6 +7,7 @@
 	import { createPty, writePty, resizePty, killPty } from './terminal-bridge';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { notifications } from '$lib/stores/notifications.svelte';
+	import { statusStore } from '$lib/stores/status.svelte';
 	import { detectNotification, createLineBuffer } from '$lib/utils/notification-detector';
 
 	let {
@@ -30,11 +31,15 @@
 		if (result.matched && appStore.activeTerminalId !== terminalId) {
 			notifications.notify(terminalId, result.pattern);
 		}
+		if (appStore.activeTerminalId === terminalId) {
+			statusStore.updateFromLine(line);
+		}
 	});
 
 	function handleContainerClick() {
 		appStore.activeTerminalId = terminalId;
 		notifications.clear(terminalId);
+		statusStore.updateGitBranch(cwd);
 	}
 
 	let containerEl: HTMLDivElement | undefined = $state();

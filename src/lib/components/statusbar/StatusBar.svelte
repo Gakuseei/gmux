@@ -1,13 +1,28 @@
+<script lang="ts">
+	import { statusStore } from '$lib/stores/status.svelte';
+
+	function formatTokens(n: number): string {
+		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+		if (n >= 1_000) return Math.round(n / 1_000) + 'k';
+		return String(n);
+	}
+
+	function formatK(n: number): string {
+		if (n >= 1_000) return Math.round(n / 1_000) + 'k';
+		return String(n) + 'k';
+	}
+</script>
+
 <footer class="statusbar">
-	<span class="item">branch: &ndash;</span>
+	<span class="item">&SquareIntersection; {statusStore.gitBranch}</span>
 	<span class="sep">&middot;</span>
-	<span class="item">model: &ndash;</span>
+	<span class="item">{statusStore.model}</span>
 	<span class="sep">&middot;</span>
-	<span class="item">reasoning: &ndash;</span>
+	<span class="item">reasoning: {statusStore.reasoning}</span>
 	<span class="sep">&middot;</span>
-	<span class="item">tokens: &ndash;</span>
+	<span class="item">&UpArrow;{formatTokens(statusStore.inputTokens)} &DownArrow;{formatTokens(statusStore.outputTokens)}</span>
 	<span class="sep">&middot;</span>
-	<span class="item">context: &ndash;</span>
+	<span class="item">ctx {statusStore.contextPercent}% ({formatK(statusStore.contextUsed)}/{formatK(statusStore.contextTotal)})</span>
 </footer>
 
 <style>
