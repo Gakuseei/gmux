@@ -42,3 +42,39 @@ export async function resizePty(id: string, rows: number, cols: number): Promise
 export async function killPty(id: string): Promise<void> {
 	await invoke('kill_pty', { id });
 }
+
+type BatchTerminalEvent = {
+	index: number;
+	event: TerminalEvent;
+};
+
+export async function spawnBatch(
+	requests: Array<{
+		shell: string;
+		cwd: string;
+		command?: string;
+		cols: number;
+		rows: number;
+	}>,
+	callbacks: Array<{
+		onData: (data: Uint8Array) => void;
+		onExit: (code: number | null) => void;
+	}>
+): Promise<string[]> {
+	const channel = new Channel<BatchTerminalEvent>();
+
+	channel.onmessage = (msg) => {
+		const cb = callbacks[msg.index];
+		if (!cb) return;
+		if (msg.event.event === 'output') {
+			cb.onData(new Uint8Array(msg.event.data.data));
+		} else if (msg.event.event === 'exit') {
+			cb.onExit(msg.event.data.code);
+		}
+	};
+
+	return await invoke<string[]>('spawn_batch', {
+		requests,
+		onEvent: channel
+	});
+}
