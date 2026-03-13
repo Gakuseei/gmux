@@ -11,6 +11,7 @@ use iced::widget::{
 use iced::{Background, Border, Element, Font, Length, Size, Theme};
 
 mod config;
+mod menu;
 mod mouse_reporter;
 mod notifications;
 mod scrollback;
@@ -164,6 +165,11 @@ struct App {
     modal_layout: LayoutTemplate,
     modal_agents: Vec<(AgentType, bool)>,
     tick_count: u32,
+    context_menu: Option<menu::ContextMenu>,
+    search_active: bool,
+    search_query: String,
+    search_match_count: usize,
+    search_current_match: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -217,6 +223,14 @@ enum Message {
     WorkspaceModalAgentBypass(usize, bool),
     WorkspaceModalCreate,
     WindowCloseRequested(iced::window::Id),
+    SearchOpen,
+    SearchClose,
+    SearchQueryChange(String),
+    SearchNext,
+    SearchPrev,
+    PaneRightClick(pane_grid::Pane, f32, f32),
+    ContextMenuClose,
+    ContextMenuAction(menu::MenuAction),
 }
 
 impl App {
@@ -355,6 +369,11 @@ impl App {
             modal_layout: LayoutTemplate::Single,
             modal_agents: vec![(AgentType::Shell, false)],
             tick_count: 0,
+            context_menu: None,
+            search_active: false,
+            search_query: String::new(),
+            search_match_count: 0,
+            search_current_match: 0,
         }
     }
 
@@ -1017,6 +1036,70 @@ impl App {
                     self.workspaces.push(ws);
                     self.active_workspace = self.workspaces.len() - 1;
                     self.workspace_modal_open = false;
+                }
+            }
+            Message::SearchOpen => {
+                self.search_active = true;
+            }
+            Message::SearchClose => {
+                self.search_active = false;
+                self.search_query.clear();
+                self.search_match_count = 0;
+            }
+            Message::SearchQueryChange(query) => {
+                self.search_query = query.clone();
+                if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                    if let Some(terminal) = ws.active_terminal() {
+                        self.search_match_count = terminal.search_grid(&query);
+                    }
+                }
+                self.search_current_match = 0;
+            }
+            Message::SearchNext => {
+                if self.search_match_count > 0 {
+                    self.search_current_match =
+                        (self.search_current_match + 1) % self.search_match_count;
+                }
+            }
+            Message::SearchPrev => {
+                if self.search_match_count > 0 {
+                    self.search_current_match = if self.search_current_match == 0 {
+                        self.search_match_count - 1
+                    } else {
+                        self.search_current_match - 1
+                    };
+                }
+            }
+            Message::PaneRightClick(_pane, x, y) => {
+                self.context_menu = Some(menu::ContextMenu {
+                    items: menu::terminal_menu_items(),
+                    position: (x, y),
+                });
+            }
+            Message::ContextMenuClose => {
+                self.context_menu = None;
+            }
+            Message::ContextMenuAction(action) => {
+                self.context_menu = None;
+                match action {
+                    menu::MenuAction::Copy => {
+                        return self.handle_shortcut(shortcuts::Action::Copy);
+                    }
+                    menu::MenuAction::Paste => {
+                        return self.handle_shortcut(shortcuts::Action::Paste);
+                    }
+                    menu::MenuAction::SplitHorizontal => {
+                        return self.update(Message::PaneSplit(pane_grid::Axis::Horizontal));
+                    }
+                    menu::MenuAction::SplitVertical => {
+                        return self.update(Message::PaneSplit(pane_grid::Axis::Vertical));
+                    }
+                    menu::MenuAction::ClosePane => {
+                        return self.update(Message::PaneClose);
+                    }
+                    menu::MenuAction::Search => {
+                        return self.update(Message::SearchOpen);
+                    }
                 }
             }
             Message::WindowCloseRequested(id) => {
@@ -2462,6 +2545,101 @@ impl App {
             .into()
     }
 
+    fn search_bar_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+        let surface_bg = ui.bg_surface.to_iced();
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let accent = ui.accent.to_iced();
+        let border_color = ui.border.to_iced();
+        let hover_color = ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+
+        let search_input = text_input("Search...", &self.search_query)
+            .on_input(Message::SearchQueryChange)
+            .size(font_size * 0.85)
+            .width(Length::Fixed(font_size * 16.0))
+            .style(move |_theme: &Theme, status| {
+                let border_c = match status {
+                    text_input::Status::Focused { .. } => accent,
+                    _ => border_color,
+                };
+                text_input::Style {
+                    background: Background::Color(surface_bg),
+                    border: Border {
+                        width: 1.0,
+                        color: border_c,
+                        radius: 4.0.into(),
+                    },
+                    icon: text_primary,
+                    placeholder: text_secondary,
+                    value: text_primary,
+                    selection: accent,
+                }
+            });
+
+        let match_label = if self.search_query.is_empty() {
+            String::new()
+        } else if self.search_match_count == 0 {
+            String::from("No matches")
+        } else {
+            format!(
+                "{} of {}",
+                self.search_current_match + 1,
+                self.search_match_count
+            )
+        };
+
+        let match_text = text(match_label)
+            .size(font_size * 0.8)
+            .color(text_secondary);
+
+        let prev_btn = button(
+            text("\u{25B2}").size(font_size * 0.75).color(text_primary),
+        )
+        .on_press(Message::SearchPrev)
+        .padding([2, 6])
+        .style(Self::ghost_button_style(text_primary, hover_color));
+
+        let next_btn = button(
+            text("\u{25BC}").size(font_size * 0.75).color(text_primary),
+        )
+        .on_press(Message::SearchNext)
+        .padding([2, 6])
+        .style(Self::ghost_button_style(text_primary, hover_color));
+
+        let close_btn = button(
+            text("\u{00D7}").size(font_size * 0.9).color(text_secondary),
+        )
+        .on_press(Message::SearchClose)
+        .padding([2, 6])
+        .style(Self::ghost_button_style(text_secondary, hover_color));
+
+        let bar = row![
+            search_input,
+            match_text,
+            prev_btn,
+            next_btn,
+            close_btn,
+        ]
+        .spacing(6)
+        .align_y(iced::Alignment::Center)
+        .padding([4, 8]);
+
+        container(bar)
+            .width(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(surface_bg)),
+                border: Border {
+                    width: 1.0,
+                    color: border_color,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
+    }
+
     fn pane_grid_view(&self) -> Element<'_, Message> {
         let Some(workspace) = self.workspaces.get(self.active_workspace) else {
             return container(text("No workspace"))
@@ -2486,6 +2664,9 @@ impl App {
                         )
                         .on_resize(move |cols, rows| {
                             Message::TerminalResize(pane, cols, rows)
+                        })
+                        .on_right_click(move |x, y| {
+                            Message::PaneRightClick(pane, x, y)
                         })
                         .into()
                     } else {
@@ -2520,7 +2701,11 @@ impl App {
                         .into()
                 };
 
-                let content_view = column![tab_bar, body];
+                let content_view: Element<'_, Message> = if self.search_active && is_focused {
+                    column![tab_bar, self.search_bar_view(), body].into()
+                } else {
+                    column![tab_bar, body].into()
+                };
 
                 let tab_name = content
                     .active_tab()
@@ -2627,7 +2812,99 @@ impl App {
             return iced::widget::Stack::with_children(vec![main_layout, overlay]).into();
         }
 
+        if let Some(ref ctx_menu) = self.context_menu {
+            let menu_overlay = self.context_menu_overlay(ctx_menu);
+            return iced::widget::Stack::with_children(vec![main_layout, menu_overlay]).into();
+        }
+
         main_layout
+    }
+
+    fn context_menu_overlay<'a>(&'a self, ctx_menu: &'a menu::ContextMenu) -> Element<'a, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+        let surface_bg = ui.bg_surface.to_iced();
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let border_color = ui.border.to_iced();
+        let hover_color = ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+
+        let items: Vec<Element<'_, Message>> = ctx_menu
+            .items
+            .iter()
+            .map(|item| {
+                let action = item.action.clone();
+                let label_text = text(&item.label)
+                    .size(font_size * 0.85)
+                    .color(text_primary);
+
+                let content: Element<'_, Message> = if let Some(ref sc) = item.shortcut {
+                    let shortcut_text = text(sc)
+                        .size(font_size * 0.7)
+                        .color(text_secondary);
+                    row![label_text, Space::new().width(Length::Fill), shortcut_text]
+                        .align_y(iced::Alignment::Center)
+                        .into()
+                } else {
+                    label_text.into()
+                };
+
+                button(content)
+                    .on_press(Message::ContextMenuAction(action))
+                    .padding([6, 12])
+                    .width(Length::Fill)
+                    .style(Self::ghost_button_style(text_primary, hover_color))
+                    .into()
+            })
+            .collect();
+
+        let menu_column = column(items)
+            .spacing(1)
+            .width(Length::Fixed(font_size * 16.0));
+
+        let menu_container = container(menu_column)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(surface_bg)),
+                border: Border {
+                    width: 1.0,
+                    color: border_color,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            })
+            .padding(4);
+
+        let (x, y) = ctx_menu.position;
+
+        let dismiss_bg: Element<'_, Message> = button(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_press(Message::ContextMenuClose)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(|_theme: &Theme, _status| button::Style {
+                background: None,
+                text_color: iced::Color::TRANSPARENT,
+                border: Border::default(),
+                ..button::Style::default()
+            })
+            .into();
+
+        let positioned_menu = container(menu_container)
+            .padding(iced::Padding {
+                top: y,
+                left: x,
+                bottom: 0.0,
+                right: 0.0,
+            })
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        iced::widget::Stack::with_children(vec![
+            dismiss_bg,
+            positioned_menu.into(),
+        ])
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
     }
 
     fn handle_shortcut(
@@ -2739,8 +3016,15 @@ impl App {
                 }
                 iced::Task::none()
             }
-            shortcuts::Action::Find
-            | shortcuts::Action::FontSizeIncrease
+            shortcuts::Action::Find => {
+                self.search_active = !self.search_active;
+                if !self.search_active {
+                    self.search_query.clear();
+                    self.search_match_count = 0;
+                }
+                iced::Task::none()
+            }
+            shortcuts::Action::FontSizeIncrease
             | shortcuts::Action::FontSizeDecrease
             | shortcuts::Action::FontSizeReset => iced::Task::none(),
         }

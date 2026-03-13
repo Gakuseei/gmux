@@ -1,5 +1,7 @@
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
+
+use regex::Regex;
 
 use alacritty_terminal::index::{Column as TermColumn, Line, Point as TermPoint, Side as TermSide};
 use alacritty_terminal::selection::{Selection, SelectionType};
@@ -28,6 +30,10 @@ use crate::theme::ColorScheme;
 const SCROLL_MULTIPLIER: f32 = 3.0;
 const CLICK_TIMING_MS: u64 = 500;
 
+static URL_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r#"https?://[^\s\]\)>"']+"#).unwrap()
+});
+
 pub struct TerminalBox<'a, Message> {
     terminal: &'a Arc<FairMutex<term::Term<EventProxy>>>,
     terminal_handle: &'a Terminal,
@@ -35,6 +41,7 @@ pub struct TerminalBox<'a, Message> {
     font_size: f32,
     on_input: Box<dyn Fn(Vec<u8>) -> Message + 'a>,
     on_resize: Option<Box<dyn Fn(u16, u16) -> Message + 'a>>,
+    on_right_click: Option<Box<dyn Fn(f32, f32) -> Message + 'a>>,
 }
 
 impl<'a, Message> TerminalBox<'a, Message> {
@@ -51,11 +58,17 @@ impl<'a, Message> TerminalBox<'a, Message> {
             font_size,
             on_input: Box::new(on_input),
             on_resize: None,
+            on_right_click: None,
         }
     }
 
     pub fn on_resize(mut self, f: impl Fn(u16, u16) -> Message + 'a) -> Self {
         self.on_resize = Some(Box::new(f));
+        self
+    }
+
+    pub fn on_right_click(mut self, f: impl Fn(f32, f32) -> Message + 'a) -> Self {
+        self.on_right_click = Some(Box::new(f));
         self
     }
 }
@@ -737,6 +750,16 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
                     let col = (p.x / cell_width) as usize;
                     let row = (p.y / cell_height) as usize;
 
+                    if state.modifiers.control() && *button == Button::Left {
+                        let line_content = self.terminal_handle.line_content(row as i32);
+                        for m in URL_REGEX.find_iter(&line_content) {
+                            if col >= m.start() && col < m.end() {
+                                let _ = open::that(m.as_str());
+                                return;
+                            }
+                        }
+                    }
+
                     let term_mode = *self.terminal.lock().mode();
                     if term_mode.intersects(TermMode::MOUSE_MODE) {
                         state.pressed_button = Some(*button);
@@ -796,6 +819,12 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
                         }
 
                         state.click = Some((click_kind, Instant::now()));
+                    } else if *button == Button::Right {
+                        if let Some(ref on_right_click) = self.on_right_click {
+                            let abs_x = bounds.x + p.x;
+                            let abs_y = bounds.y + p.y;
+                            shell.publish((on_right_click)(abs_x, abs_y));
+                        }
                     }
                 }
             }
