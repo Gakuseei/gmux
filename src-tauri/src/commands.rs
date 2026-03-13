@@ -1,11 +1,42 @@
 use crate::pty::PtyManager;
 use base64::Engine;
-use futures::future::join_all;
 use std::io::Read;
+use std::path::Path;
 use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
+
+const SHELL_METACHARACTERS: &[char] = &[
+    '|', '&', ';', '$', '`', '(', ')', '{', '}', '[', ']', '<', '>', '!', '#', '*', '?', '~',
+    '"', '\'', '\\', '\n', '\r',
+];
+
+fn validate_shell_path(shell: &str) -> Result<(), String> {
+    if !shell.starts_with('/') {
+        return Err("Shell path must be absolute".to_string());
+    }
+    if !Path::new(shell).exists() {
+        return Err(format!("Shell not found: {shell}"));
+    }
+    Ok(())
+}
+
+fn validate_cli_name(name: &str) -> Result<(), String> {
+    if name.is_empty() {
+        return Err("Command name must not be empty".to_string());
+    }
+    if name.contains(char::is_whitespace) {
+        return Err("Command name must not contain whitespace".to_string());
+    }
+    if name.contains('/') || name.contains('\\') {
+        return Err("Command name must not contain path separators".to_string());
+    }
+    if name.contains(SHELL_METACHARACTERS) {
+        return Err("Command name contains invalid characters".to_string());
+    }
+    Ok(())
+}
 
 #[tauri::command]
 pub fn get_default_shell() -> String {
@@ -35,6 +66,7 @@ pub fn get_system_info() -> Result<SystemInfo, String> {
 
 #[tauri::command]
 pub fn check_cli_exists(command: String) -> Result<bool, String> {
+    validate_cli_name(&command)?;
     Command::new("which")
         .arg(&command)
         .output()
@@ -58,6 +90,7 @@ pub fn create_pty(
     on_event: Channel<TerminalEvent>,
     state: State<'_, Arc<Mutex<PtyManager>>>,
 ) -> Result<String, String> {
+    validate_shell_path(&shell)?;
     let mut manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
     let (id, reader) = manager
         .spawn(&shell, &cwd, cols, rows, vec![])
@@ -131,109 +164,3 @@ pub fn kill_pty(
     Ok(())
 }
 
-#[derive(serde::Deserialize)]
-pub struct SpawnRequest {
-    pub shell: String,
-    pub cwd: String,
-    pub command: Option<String>,
-    pub cols: u16,
-    pub rows: u16,
-}
-
-#[derive(Clone, serde::Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct BatchTerminalEvent {
-    pub index: usize,
-    pub event: TerminalEvent,
-}
-
-fn spawn_batch_reader_thread(
-    mut reader: Box<dyn Read + Send>,
-    index: usize,
-    on_event: Channel<BatchTerminalEvent>,
-) {
-    tauri::async_runtime::spawn_blocking(move || {
-        let mut buf = [0u8; 4096];
-        loop {
-            match reader.read(&mut buf) {
-                Ok(0) => {
-                    on_event
-                        .send(BatchTerminalEvent {
-                            index,
-                            event: TerminalEvent::Exit { code: None },
-                        })
-                        .ok();
-                    break;
-                }
-                Ok(n) => {
-                    let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
-                    on_event
-                        .send(BatchTerminalEvent {
-                            index,
-                            event: TerminalEvent::Output { data: encoded },
-                        })
-                        .ok();
-                }
-                Err(_) => {
-                    on_event
-                        .send(BatchTerminalEvent {
-                            index,
-                            event: TerminalEvent::Exit { code: None },
-                        })
-                        .ok();
-                    break;
-                }
-            }
-        }
-    });
-}
-
-#[tauri::command]
-pub async fn spawn_batch(
-    requests: Vec<SpawnRequest>,
-    on_event: Channel<BatchTerminalEvent>,
-    state: State<'_, Arc<Mutex<PtyManager>>>,
-) -> Result<Vec<String>, String> {
-    let manager = Arc::clone(&state);
-
-    let tasks: Vec<_> = requests
-        .into_iter()
-        .enumerate()
-        .map(|(index, req)| {
-            let mgr = Arc::clone(&manager);
-            let channel = on_event.clone();
-            tokio::spawn(async move {
-                let (id, reader) = {
-                    let mut locked = mgr.lock().map_err(|e| format!("lock poisoned: {e}"))?;
-                    locked
-                        .spawn(&req.shell, &req.cwd, req.cols, req.rows, vec![])
-                        .map_err(|e: anyhow::Error| e.to_string())?
-                };
-
-                spawn_batch_reader_thread(reader, index, channel);
-
-                if let Some(cmd) = req.command {
-                    let mgr_write = Arc::clone(&mgr);
-                    let pty_id = id.clone();
-                    tokio::spawn(async move {
-                        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-                        let locked = mgr_write.lock().ok();
-                        if let Some(m) = locked {
-                            let payload = format!("{cmd}\r");
-                            let _ = m.write(&pty_id, payload.as_bytes());
-                        }
-                    });
-                }
-
-                Ok::<String, String>(id)
-            })
-        })
-        .collect();
-
-    let results = join_all(tasks).await;
-
-    results
-        .into_iter()
-        .map(|r| r.map_err(|e| format!("task join error: {e}"))?)
-        .collect()
-}

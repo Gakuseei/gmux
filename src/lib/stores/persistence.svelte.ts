@@ -9,6 +9,12 @@ interface WindowState {
 	y: number;
 }
 
+interface PathEntry {
+	path: string;
+	frequency: number;
+	lastUsed: string;
+}
+
 interface PersistedState {
 	workspaces: Workspace[];
 	folders: Folder[];
@@ -16,41 +22,43 @@ interface PersistedState {
 	sidebarMinimized: boolean;
 	activeWorkspaceId: string | null;
 	windowState?: WindowState;
-	recentPaths?: unknown[];
+	recentPaths?: PathEntry[];
 }
 
 class PersistenceStore {
 	private saveTimeout: ReturnType<typeof setTimeout> | null = null;
+	private saveQueue: Promise<void> = Promise.resolve();
 	windowState: WindowState | null = null;
+	recentPaths: PathEntry[] = [];
+
+	private enqueue(fn: () => Promise<void>): Promise<void> {
+		this.saveQueue = this.saveQueue.then(fn, fn);
+		return this.saveQueue;
+	}
 
 	async saveState(windowState?: WindowState) {
-		const raw = await invoke<string | null>('load_app_state');
-		let existing: Record<string, unknown> = {};
-		if (raw) {
-			try {
-				existing = JSON.parse(raw);
-			} catch (e) {
-				console.error('Failed to parse existing state:', e);
+		return this.enqueue(async () => {
+			const state: PersistedState = {
+				workspaces: appStore.workspaces.map((ws) => ({
+					...ws,
+					sessions: ws.sessions.map((s) => ({ ...s, notificationCount: 0 }))
+				})),
+				folders: appStore.folders,
+				sidebarWidth: appStore.sidebarWidth,
+				sidebarMinimized: appStore.sidebarMinimized,
+				activeWorkspaceId: appStore.activeWorkspaceId,
+				recentPaths: this.recentPaths
+			};
+
+			if (windowState) {
+				state.windowState = windowState;
+				this.windowState = windowState;
+			} else if (this.windowState) {
+				state.windowState = this.windowState;
 			}
-		}
 
-		const state: PersistedState = {
-			...existing,
-			workspaces: appStore.workspaces.map((ws) => ({
-				...ws,
-				sessions: ws.sessions.map((s) => ({ ...s, notificationCount: 0 }))
-			})),
-			folders: appStore.folders,
-			sidebarWidth: appStore.sidebarWidth,
-			sidebarMinimized: appStore.sidebarMinimized,
-			activeWorkspaceId: appStore.activeWorkspaceId
-		};
-
-		if (windowState) {
-			state.windowState = windowState;
-		}
-
-		await invoke('save_app_state', { data: JSON.stringify(state) });
+			await invoke('save_app_state', { data: JSON.stringify(state) });
+		});
 	}
 
 	async loadState() {
@@ -87,6 +95,10 @@ class PersistenceStore {
 
 		if (state.windowState) {
 			this.windowState = state.windowState;
+		}
+
+		if (state.recentPaths && Array.isArray(state.recentPaths)) {
+			this.recentPaths = state.recentPaths;
 		}
 	}
 

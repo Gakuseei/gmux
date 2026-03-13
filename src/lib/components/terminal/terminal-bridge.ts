@@ -52,38 +52,10 @@ export async function killPty(id: string): Promise<void> {
 	await invoke('kill_pty', { id });
 }
 
-type BatchTerminalEvent = {
-	index: number;
-	event: TerminalEvent;
-};
+export async function saveScrollback(terminalId: string, content: string): Promise<void> {
+	await invoke('save_scrollback', { terminalId, content });
+}
 
-export async function spawnBatch(
-	requests: Array<{
-		shell: string;
-		cwd: string;
-		command?: string;
-		cols: number;
-		rows: number;
-	}>,
-	callbacks: Array<{
-		onData: (data: Uint8Array) => void;
-		onExit: (code: number | null) => void;
-	}>
-): Promise<string[]> {
-	const channel = new Channel<BatchTerminalEvent>();
-
-	channel.onmessage = (msg) => {
-		const cb = callbacks[msg.index];
-		if (!cb) return;
-		if (msg.event.event === 'output') {
-			cb.onData(decodeBase64(msg.event.data.data));
-		} else if (msg.event.event === 'exit') {
-			cb.onExit(msg.event.data.code);
-		}
-	};
-
-	return await invoke<string[]>('spawn_batch', {
-		requests,
-		onEvent: channel
-	});
+export async function loadScrollback(terminalId: string): Promise<string | null> {
+	return await invoke<string | null>('load_scrollback', { terminalId });
 }

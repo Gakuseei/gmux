@@ -9,7 +9,7 @@
 
 	function formatK(n: number): string {
 		if (n >= 1_000) return Math.round(n / 1_000) + 'k';
-		return String(n) + 'k';
+		return String(n);
 	}
 </script>
 

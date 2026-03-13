@@ -55,10 +55,9 @@
 	}
 
 	function progressColor(pct: number): string {
-		const style = getComputedStyle(document.documentElement);
-		if (pct >= 90) return style.getPropertyValue('--color-error').trim() || '#ef4444';
-		if (pct >= 70) return style.getPropertyValue('--color-warning').trim() || '#f59e0b';
-		return style.getPropertyValue('--accent').trim() || '#10a37f';
+		if (pct >= 90) return 'var(--color-error, #ef4444)';
+		if (pct >= 70) return 'var(--color-warning, #f59e0b)';
+		return 'var(--accent, #10a37f)';
 	}
 
 	function formatMinutes(mins: number): string {

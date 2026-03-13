@@ -1,4 +1,4 @@
-import { defineConfig } from "vite";
+import { defineConfig } from "vitest/config";
 import { sveltekit } from "@sveltejs/kit/vite";
 
 const host = process.env.TAURI_DEV_HOST;
@@ -6,6 +6,9 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [sveltekit()],
   clearScreen: false,
+  test: {
+    include: ["src/**/*.test.ts"],
+  },
   server: {
     port: 1420,
     strictPort: true,

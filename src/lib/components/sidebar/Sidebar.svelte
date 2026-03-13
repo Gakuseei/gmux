@@ -5,11 +5,15 @@
 
 	let resizing = $state(false);
 
+	const SIDEBAR_MIN = 180;
+	const SIDEBAR_MAX = 400;
+	const SIDEBAR_KEYBOARD_STEP = 10;
+
 	function startResize(e: MouseEvent) {
 		e.preventDefault();
 		resizing = true;
 		const onMouseMove = (ev: MouseEvent) => {
-			const width = Math.min(400, Math.max(180, ev.clientX));
+			const width = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX));
 			appStore.sidebarWidth = width;
 		};
 		const onMouseUp = () => {
@@ -20,12 +24,22 @@
 		window.addEventListener('mousemove', onMouseMove);
 		window.addEventListener('mouseup', onMouseUp);
 	}
+
+	function handleResizeKeydown(e: KeyboardEvent) {
+		if (e.key === 'ArrowRight') {
+			e.preventDefault();
+			appStore.sidebarWidth = Math.min(SIDEBAR_MAX, appStore.sidebarWidth + SIDEBAR_KEYBOARD_STEP);
+		} else if (e.key === 'ArrowLeft') {
+			e.preventDefault();
+			appStore.sidebarWidth = Math.max(SIDEBAR_MIN, appStore.sidebarWidth - SIDEBAR_KEYBOARD_STEP);
+		}
+	}
 </script>
 
 <aside class="sidebar" class:minimized={appStore.sidebarMinimized} class:resizing>
 	{#if appStore.sidebarMinimized}
 		<div class="mini-content">
-			<button class="mini-action" title="New Workspace" onclick={() => (appStore.showNewWorkspaceModal = true)}>
+			<button class="mini-action" title="New Workspace" aria-label="New workspace" onclick={() => (appStore.showNewWorkspaceModal = true)}>
 				+
 			</button>
 
@@ -39,7 +53,7 @@
 				{/each}
 			</div>
 
-			<button class="toggle-btn" onclick={() => appStore.toggleSidebar()} title="Expand sidebar">
+			<button class="toggle-btn" onclick={() => appStore.toggleSidebar()} title="Expand sidebar" aria-label="Expand sidebar">
 				&#9654;
 			</button>
 		</div>
@@ -72,14 +86,23 @@
 				<button class="footer-btn" onclick={() => appStore.addFolder('New Folder')}>
 					New Folder
 				</button>
-				<button class="toggle-btn" onclick={() => appStore.toggleSidebar()} title="Minimize sidebar">
+				<button class="toggle-btn" onclick={() => appStore.toggleSidebar()} title="Minimize sidebar" aria-label="Minimize sidebar">
 					&#9664;
 				</button>
 			</div>
 		</div>
 
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="resize-handle" onmousedown={startResize}></div>
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+		<div
+			class="resize-handle"
+			onmousedown={startResize}
+			onkeydown={handleResizeKeydown}
+			role="separator"
+			tabindex="0"
+			aria-orientation="vertical"
+			aria-label="Resize sidebar"
+		></div>
 	{/if}
 </aside>
 

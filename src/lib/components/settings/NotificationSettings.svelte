@@ -73,7 +73,7 @@
 					placeholder="e.g. error|warning"
 					class="text-input pattern-input"
 				/>
-				<button class="remove-btn" onclick={() => removePattern(i)}>&times;</button>
+				<button class="remove-btn" aria-label="Remove pattern" onclick={() => removePattern(i)}>&times;</button>
 			</div>
 		{/each}
 	</div>

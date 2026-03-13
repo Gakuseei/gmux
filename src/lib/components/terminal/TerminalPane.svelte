@@ -1,11 +1,10 @@
 <script lang="ts">
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
-	import { WebglAddon } from '@xterm/addon-webgl';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { SearchAddon } from '@xterm/addon-search';
 	import '@xterm/xterm/css/xterm.css';
-	import { createPty, writePty, resizePty, killPty } from './terminal-bridge';
+	import { createPty, writePty, resizePty, killPty, saveScrollback, loadScrollback } from './terminal-bridge';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { notifications } from '$lib/stores/notifications.svelte';
@@ -30,8 +29,22 @@
 		onData?: (data: string) => void;
 	} = $props();
 
+	function buildCustomPatterns(): Array<{ name: string; regex: RegExp }> {
+		return settingsStore.notifications.customPatterns
+			.filter((s) => s.length > 0)
+			.map((s, i) => {
+				try {
+					return { name: `custom-${i}`, regex: new RegExp(s) };
+				} catch {
+					return null;
+				}
+			})
+			.filter((p): p is { name: string; regex: RegExp } => p !== null);
+	}
+
 	const lineBuffer = createLineBuffer((line) => {
-		const result = detectNotification(line);
+		const customPatterns = buildCustomPatterns();
+		const result = detectNotification(line, customPatterns.length > 0 ? customPatterns : undefined);
 		if (result.matched && appStore.activeTerminalId !== terminalId) {
 			notifications.notify(terminalId, result.pattern);
 		}
@@ -127,9 +140,9 @@
 			term.open(containerEl!);
 
 			try {
+				const { WebglAddon } = await import('@xterm/addon-webgl');
 				term.loadAddon(new WebglAddon());
-			} catch (e) {
-				console.error('WebGL addon failed, using canvas fallback:', e);
+			} catch {
 			}
 
 			fitAddon.fit();
@@ -143,8 +156,18 @@
 			if (existingPtyId) {
 				ptyId = existingPtyId;
 				isAlive = true;
+				try {
+					const saved = await loadScrollback(terminalId);
+					if (saved && term) {
+						term.write(saved);
+					}
+				} catch {
+				}
 			} else {
 				try {
+					let receivedFirstOutput = false;
+					let pendingCommand = command ?? null;
+
 					const id = await createPty(
 						resolvedShell,
 						cwd,
@@ -157,6 +180,14 @@
 							lineBuffer(text);
 							if (onData) {
 								onData(text);
+							}
+							if (!receivedFirstOutput && pendingCommand) {
+								receivedFirstOutput = true;
+								const cmd = pendingCommand;
+								pendingCommand = null;
+								if (isAlive && ptyId) {
+									writePty(ptyId, cmd + '\r');
+								}
 							}
 						},
 						(_code) => {
@@ -171,17 +202,8 @@
 
 					ptyId = id;
 					isAlive = true;
-
-					if (command) {
-						setTimeout(() => {
-							if (ptyId && isAlive) {
-								writePty(ptyId, command + '\r');
-							}
-						}, 200);
-					}
 				} catch (e) {
 					spawnError = String(e);
-					console.error('PTY spawn failed:', e);
 					return;
 				}
 			}
@@ -209,7 +231,18 @@
 			disposed = true;
 			if (resizeTimeout) clearTimeout(resizeTimeout);
 			if (resizeObserver) resizeObserver.disconnect();
-			if (term) term.dispose();
+			if (term) {
+				const buffer = term.buffer.active;
+				let content = '';
+				for (let i = 0; i < buffer.length; i++) {
+					const line = buffer.getLine(i);
+					if (line) content += line.translateToString(true) + '\n';
+				}
+				if (content.trim().length > 0) {
+					saveScrollback(terminalId, content).catch(() => {});
+				}
+				term.dispose();
+			}
 			if (ptyId && isAlive && !existingPtyId) {
 				killPty(ptyId);
 			}
@@ -235,9 +268,9 @@
 				placeholder="Search..."
 				onkeydown={handleSearchKeydown}
 			/>
-			<button class="search-btn" onclick={() => searchAddon?.findPrevious(searchQuery)}>Prev</button>
-			<button class="search-btn" onclick={() => searchAddon?.findNext(searchQuery)}>Next</button>
-			<button class="search-btn" onclick={() => (showSearch = false)}>Close</button>
+			<button class="search-btn" aria-label="Previous match" onclick={() => searchAddon?.findPrevious(searchQuery)}>Prev</button>
+			<button class="search-btn" aria-label="Next match" onclick={() => searchAddon?.findNext(searchQuery)}>Next</button>
+			<button class="search-btn" aria-label="Close search" onclick={() => (showSearch = false)}>Close</button>
 		</div>
 	{/if}
 	<div bind:this={containerEl} class="terminal-container"></div>

@@ -1,4 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
+import { persistence } from './persistence.svelte';
 
 interface PathEntry {
 	path: string;
@@ -6,43 +6,11 @@ interface PathEntry {
 	lastUsed: string;
 }
 
-const FILENAME = 'recent-paths.json';
 const MAX_PATHS = 10;
 
 class RecentPathsStore {
-	entries = $state<PathEntry[]>([]);
-
-	constructor() {
-		this.load();
-	}
-
-	private async load() {
-		try {
-			const raw = await invoke<string | null>('load_app_state');
-			if (raw) {
-				const parsed = JSON.parse(raw);
-				if (parsed.recentPaths && Array.isArray(parsed.recentPaths)) {
-					this.entries = parsed.recentPaths;
-				}
-			}
-		} catch (e) {
-			console.error('Failed to load recent paths:', e);
-			this.entries = [];
-		}
-	}
-
-	private async save() {
-		try {
-			const existing = await invoke<string | null>('load_app_state');
-			let state: Record<string, unknown> = {};
-			if (existing) {
-				state = JSON.parse(existing);
-			}
-			state.recentPaths = this.entries;
-			await invoke('save_app_state', { data: JSON.stringify(state) });
-		} catch (e) {
-			console.error('Failed to save recent paths:', e);
-		}
+	get entries(): PathEntry[] {
+		return persistence.recentPaths;
 	}
 
 	private score(entry: PathEntry): number {
@@ -53,27 +21,27 @@ class RecentPathsStore {
 	}
 
 	addPath(path: string) {
-		const existing = this.entries.find((e) => e.path === path);
+		const existing = persistence.recentPaths.find((e) => e.path === path);
 		if (existing) {
 			existing.frequency++;
 			existing.lastUsed = new Date().toISOString();
 		} else {
-			this.entries.push({
+			persistence.recentPaths.push({
 				path,
 				frequency: 1,
 				lastUsed: new Date().toISOString()
 			});
 		}
-		this.save();
+		persistence.scheduleSave();
 	}
 
 	getPaths(): PathEntry[] {
-		return [...this.entries].sort((a, b) => this.score(b) - this.score(a)).slice(0, MAX_PATHS);
+		return [...persistence.recentPaths].sort((a, b) => this.score(b) - this.score(a)).slice(0, MAX_PATHS);
 	}
 
 	removePath(path: string) {
-		this.entries = this.entries.filter((e) => e.path !== path);
-		this.save();
+		persistence.recentPaths = persistence.recentPaths.filter((e) => e.path !== path);
+		persistence.scheduleSave();
 	}
 }
 

@@ -11,6 +11,11 @@ class AppStore {
 	activeTerminalId = $state<string | null>(null);
 	showNewWorkspaceModal = $state(false);
 	showSettings = $state(false);
+	version = $state(0);
+
+	private bump() {
+		this.version++;
+	}
 
 	get activeWorkspace(): Workspace | undefined {
 		return this.workspaces.find((w) => w.id === this.activeWorkspaceId);
@@ -35,6 +40,7 @@ class AppStore {
 	addWorkspace(ws: Workspace) {
 		this.workspaces.push(ws);
 		this.activeWorkspaceId = ws.id;
+		this.bump();
 	}
 
 	removeWorkspace(id: string) {
@@ -42,29 +48,41 @@ class AppStore {
 		if (this.activeWorkspaceId === id) {
 			this.activeWorkspaceId = this.workspaces[0]?.id ?? null;
 		}
+		this.bump();
 	}
 
 	renameWorkspace(id: string, name: string) {
 		const ws = this.workspaces.find((w) => w.id === id);
-		if (ws) ws.name = name;
+		if (ws) {
+			ws.name = name;
+			this.bump();
+		}
 	}
 
 	moveWorkspaceToFolder(workspaceId: string, folderId: string | undefined) {
 		const ws = this.workspaces.find((w) => w.id === workspaceId);
-		if (ws) ws.folderId = folderId;
+		if (ws) {
+			ws.folderId = folderId;
+			this.bump();
+		}
 	}
 
 	setActiveWorkspace(id: string) {
 		this.activeWorkspaceId = id;
+		this.bump();
 	}
 
 	addFolder(name: string) {
 		this.folders.push({ id: crypto.randomUUID(), name, collapsed: false });
+		this.bump();
 	}
 
 	renameFolder(id: string, name: string) {
 		const f = this.folders.find((f) => f.id === id);
-		if (f) f.name = name;
+		if (f) {
+			f.name = name;
+			this.bump();
+		}
 	}
 
 	removeFolder(id: string) {
@@ -72,15 +90,20 @@ class AppStore {
 		this.workspaces
 			.filter((w) => w.folderId === id)
 			.forEach((w) => (w.folderId = undefined));
+		this.bump();
 	}
 
 	toggleFolder(id: string) {
 		const f = this.folders.find((f) => f.id === id);
-		if (f) f.collapsed = !f.collapsed;
+		if (f) {
+			f.collapsed = !f.collapsed;
+			this.bump();
+		}
 	}
 
 	toggleSidebar() {
 		this.sidebarMinimized = !this.sidebarMinimized;
+		this.bump();
 	}
 
 	addSessionToWorkspace(workspaceId: string, session: TerminalSession) {
@@ -113,7 +136,9 @@ class AppStore {
 			const s = ws.sessions.find((s) => s.id === sessionId);
 			if (s) {
 				s.notificationCount = 0;
-				s.status = 'running';
+				if (s.status === 'needs-input') {
+					s.status = 'running';
+				}
 				break;
 			}
 		}

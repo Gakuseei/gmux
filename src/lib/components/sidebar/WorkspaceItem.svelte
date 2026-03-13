@@ -26,18 +26,16 @@
 		workspace.sessions.reduce((sum, s) => sum + s.notificationCount, 0)
 	);
 
+	const STATUS_COLOR_MAP: Record<string, string> = {
+		running: 'var(--color-success, #22c55e)',
+		'needs-input': 'var(--notification, #3b82f6)',
+		exited: '#6b7280'
+	};
+
+	const STATUS_COLOR_DEFAULT = '#6b7280';
+
 	function statusColor(status: string): string {
-		const style = getComputedStyle(document.documentElement);
-		switch (status) {
-			case 'running':
-				return style.getPropertyValue('--color-success').trim() || '#22c55e';
-			case 'needs-input':
-				return style.getPropertyValue('--notification').trim() || '#3b82f6';
-			case 'exited':
-				return '#6b7280';
-			default:
-				return '#6b7280';
-		}
+		return STATUS_COLOR_MAP[status] ?? STATUS_COLOR_DEFAULT;
 	}
 
 	function handleContextMenu(e: MouseEvent) {
@@ -70,6 +68,20 @@
 		if (e.dataTransfer) {
 			e.dataTransfer.setData('text/plain', workspace.id);
 			e.dataTransfer.effectAllowed = 'move';
+		}
+	}
+
+	function handleItemKeydown(e: KeyboardEvent) {
+		if (e.key === 'F10' && e.shiftKey) {
+			e.preventDefault();
+			const target = e.currentTarget as HTMLElement;
+			const rect = target.getBoundingClientRect();
+			contextMenu = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+		} else if (e.key === 'ContextMenu') {
+			e.preventDefault();
+			const target = e.currentTarget as HTMLElement;
+			const rect = target.getBoundingClientRect();
+			contextMenu = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
 		}
 	}
 
@@ -106,7 +118,7 @@
 	</button>
 {:else}
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="workspace-item" class:active={isActive} oncontextmenu={handleContextMenu} draggable="true" ondragstart={handleDragStart}>
+	<div class="workspace-item" class:active={isActive} oncontextmenu={handleContextMenu} onkeydown={handleItemKeydown} draggable="true" ondragstart={handleDragStart}>
 		<button class="ws-header" onclick={() => appStore.setActiveWorkspace(workspace.id)}>
 			{#if editing}
 				<input

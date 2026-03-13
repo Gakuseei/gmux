@@ -82,7 +82,7 @@
 					placeholder="Command"
 					class="text-input custom-input"
 				/>
-				<button class="remove-btn" onclick={() => removeCustom(i)}>&times;</button>
+				<button class="remove-btn" aria-label="Remove CLI" onclick={() => removeCustom(i)}>&times;</button>
 			</div>
 		{/each}
 	</div>

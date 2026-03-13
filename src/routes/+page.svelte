@@ -56,11 +56,7 @@
 
 	$effect(() => {
 		if (!loaded) return;
-		JSON.stringify(appStore.workspaces);
-		JSON.stringify(appStore.folders);
-		appStore.sidebarWidth;
-		appStore.sidebarMinimized;
-		appStore.activeWorkspaceId;
+		appStore.version;
 		persistence.scheduleSave();
 	});
 </script>

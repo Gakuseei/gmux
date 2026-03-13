@@ -8,8 +8,35 @@
 	let { items, x, y, onClose }: { items: MenuItem[]; x: number; y: number; onClose: () => void } =
 		$props();
 
-	function handleKeydown(e: KeyboardEvent) {
-		if (e.key === 'Escape') onClose();
+	let menuEl: HTMLDivElement | undefined = $state();
+	let focusedIndex = $state(0);
+
+	function focusItem(index: number) {
+		if (!menuEl) return;
+		const buttons = menuEl.querySelectorAll<HTMLButtonElement>('[role="menuitem"]');
+		if (buttons[index]) {
+			focusedIndex = index;
+			buttons[index].focus();
+		}
+	}
+
+	function handleMenuKeydown(e: KeyboardEvent) {
+		if (e.key === 'Escape') {
+			e.preventDefault();
+			onClose();
+		} else if (e.key === 'ArrowDown') {
+			e.preventDefault();
+			focusItem((focusedIndex + 1) % items.length);
+		} else if (e.key === 'ArrowUp') {
+			e.preventDefault();
+			focusItem((focusedIndex - 1 + items.length) % items.length);
+		} else if (e.key === 'Home') {
+			e.preventDefault();
+			focusItem(0);
+		} else if (e.key === 'End') {
+			e.preventDefault();
+			focusItem(items.length - 1);
+		}
 	}
 
 	function handleWindowClick() {
@@ -17,21 +44,32 @@
 	}
 
 	$effect(() => {
-		window.addEventListener('keydown', handleKeydown);
-		const timer = setTimeout(() => window.addEventListener('click', handleWindowClick), 0);
+		const timer = setTimeout(() => {
+			window.addEventListener('click', handleWindowClick);
+			focusItem(0);
+		}, 0);
 		return () => {
-			window.removeEventListener('keydown', handleKeydown);
 			clearTimeout(timer);
 			window.removeEventListener('click', handleWindowClick);
 		};
 	});
 </script>
 
-<div class="context-menu" style:left="{x}px" style:top="{y}px">
-	{#each items as item}
+<!-- svelte-ignore a11y_interactive_supports_focus -->
+<div
+	bind:this={menuEl}
+	class="context-menu"
+	style:left="{x}px"
+	style:top="{y}px"
+	role="menu"
+	onkeydown={handleMenuKeydown}
+>
+	{#each items as item, i}
 		<button
 			class="menu-item"
 			class:danger={item.danger}
+			role="menuitem"
+			tabindex={i === focusedIndex ? 0 : -1}
 			onclick={(e) => {
 				e.stopPropagation();
 				item.action();

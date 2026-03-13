@@ -22,9 +22,9 @@
 		{/if}
 	</div>
 	<div class="right">
-		<button class="header-btn" onclick={onSplitHorizontal} title="Split horizontal">&#8862;</button>
-		<button class="header-btn" onclick={onSplitVertical} title="Split vertical">&#8863;</button>
-		<button class="header-btn close-btn" onclick={onClose} title="Close">&#10005;</button>
+		<button class="header-btn" onclick={onSplitHorizontal} title="Split horizontal" aria-label="Split horizontal">&#8862;</button>
+		<button class="header-btn" onclick={onSplitVertical} title="Split vertical" aria-label="Split vertical">&#8863;</button>
+		<button class="header-btn close-btn" onclick={onClose} title="Close" aria-label="Close pane">&#10005;</button>
 	</div>
 </div>
 

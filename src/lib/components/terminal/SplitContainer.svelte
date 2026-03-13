@@ -26,6 +26,10 @@
 	let dragging = $state(false);
 	let containerEl: HTMLDivElement | undefined = $state();
 
+	const RATIO_MIN = 0.1;
+	const RATIO_MAX = 0.9;
+	const RATIO_KEYBOARD_STEP = 0.05;
+
 	function findSession(terminalId: string) {
 		return workspace.sessions.find((s) => s.id === terminalId);
 	}
@@ -47,14 +51,14 @@
 			const delta = isHorizontal ? e.clientX - startX : e.clientY - startY;
 			const totalSize = isHorizontal ? rect.width : rect.height;
 			const rawRatio = initialRatio + startOffset + delta / totalSize;
-			ratioOffset = Math.min(0.9, Math.max(0.1, rawRatio)) - initialRatio;
+			ratioOffset = Math.min(RATIO_MAX, Math.max(RATIO_MIN, rawRatio)) - initialRatio;
 		}
 
 		function onMouseUp() {
 			dragging = false;
 			window.removeEventListener('mousemove', onMouseMove);
 			window.removeEventListener('mouseup', onMouseUp);
-			const finalRatio = Math.min(0.9, Math.max(0.1, initialRatio + ratioOffset));
+			const finalRatio = Math.min(RATIO_MAX, Math.max(RATIO_MIN, initialRatio + ratioOffset));
 			node.ratio = finalRatio;
 			if (onRatioChange) {
 				onRatioChange(node, finalRatio);
@@ -63,6 +67,26 @@
 
 		window.addEventListener('mousemove', onMouseMove);
 		window.addEventListener('mouseup', onMouseUp);
+	}
+
+	function onDividerKeydown(e: KeyboardEvent) {
+		const isHorizontal = node.direction === 'horizontal';
+		const increaseKey = isHorizontal ? 'ArrowRight' : 'ArrowDown';
+		const decreaseKey = isHorizontal ? 'ArrowLeft' : 'ArrowUp';
+
+		if (e.key === increaseKey) {
+			e.preventDefault();
+			const newRatio = Math.min(RATIO_MAX, ratio + RATIO_KEYBOARD_STEP);
+			ratioOffset = newRatio - initialRatio;
+			node.ratio = newRatio;
+			if (onRatioChange) onRatioChange(node, newRatio);
+		} else if (e.key === decreaseKey) {
+			e.preventDefault();
+			const newRatio = Math.max(RATIO_MIN, ratio - RATIO_KEYBOARD_STEP);
+			ratioOffset = newRatio - initialRatio;
+			node.ratio = newRatio;
+			if (onRatioChange) onRatioChange(node, newRatio);
+		}
 	}
 </script>
 
@@ -106,14 +130,21 @@
 				{onRatioChange}
 			/>
 		</div>
+		<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
 		<!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
 		<div
 			class="divider"
 			class:divider-horizontal={node.direction === 'horizontal'}
 			class:divider-vertical={node.direction === 'vertical'}
 			onmousedown={onDividerMouseDown}
+			onkeydown={onDividerKeydown}
 			role="separator"
-			tabindex="-1"
+			tabindex="0"
+			aria-valuenow={Math.round(ratio * 100)}
+			aria-valuemin={Math.round(RATIO_MIN * 100)}
+			aria-valuemax={Math.round(RATIO_MAX * 100)}
+			aria-orientation={node.direction === 'horizontal' ? 'vertical' : 'horizontal'}
+			aria-label="Resize split pane"
 		></div>
 		<div class="split-child" style:flex-basis="{(1 - ratio) * 100}%">
 			<SplitContainer

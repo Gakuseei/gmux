@@ -3,7 +3,6 @@
 	import { recentPathsStore } from '$lib/stores/recent-paths.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { generateLayout } from '$lib/utils/layout-helpers';
-	import { spawnBatch } from '$lib/components/terminal/terminal-bridge';
 	import { createFocusTrap } from '$lib/utils/focus-trap';
 	import PathPicker from './PathPicker.svelte';
 	import LayoutPicker from './LayoutPicker.svelte';
@@ -113,30 +112,6 @@
 
 		appStore.addWorkspace(workspace);
 
-		try {
-			const batchRequests = sessions.map((s) => ({
-				shell: s.shell,
-				cwd: s.cwd,
-				command: s.command,
-				cols: 80,
-				rows: 24,
-			}));
-
-			const callbacks = sessions.map(() => ({
-				onData: () => {},
-				onExit: () => {},
-			}));
-
-			const ptyIds = await spawnBatch(batchRequests, callbacks);
-			ptyIds.forEach((ptyId, i) => {
-				if (sessions[i]) {
-					sessions[i].ptyId = ptyId;
-				}
-			});
-		} catch (e) {
-			console.error('Failed to spawn batch PTYs:', e);
-		}
-
 		if (cwd) {
 			recentPathsStore.addPath(cwd);
 		}
@@ -177,7 +152,7 @@
 	<div bind:this={modalEl} class="modal" role="dialog" aria-modal="true" aria-labelledby="new-workspace-title" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 		<div class="modal-header">
 			<h2 id="new-workspace-title">New Workspace</h2>
-			<button class="close-btn" onclick={close}>&times;</button>
+			<button class="close-btn" aria-label="Close modal" onclick={close}>&times;</button>
 		</div>
 
 		<div class="modal-body">

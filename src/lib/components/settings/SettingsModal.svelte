@@ -50,7 +50,7 @@
 	<div bind:this={modalEl} class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 		<div class="modal-header">
 			<h2 id="settings-modal-title">Settings</h2>
-			<button class="close-btn" onclick={close}>&times;</button>
+			<button class="close-btn" aria-label="Close modal" onclick={close}>&times;</button>
 		</div>
 
 		<div class="modal-content">

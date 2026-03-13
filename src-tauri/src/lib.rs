@@ -18,7 +18,7 @@ pub fn run() {
             commands::write_pty,
             commands::resize_pty,
             commands::kill_pty,
-            commands::spawn_batch,
+
             commands::get_default_shell,
             config::save_app_state,
             config::load_app_state,
