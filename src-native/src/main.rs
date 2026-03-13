@@ -19,6 +19,8 @@ mod terminal;
 mod terminal_box;
 mod theme;
 mod workspace;
+mod usage;
+mod git;
 
 use crate::config::{Config, CursorStyle};
 use crate::notifications::NotificationDetector;
