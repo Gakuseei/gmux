@@ -9,16 +9,17 @@ node_modules
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 
-# Plans & design docs
 docs/
-
-# Nexus orchestrator data
 .nexus/
-
-# Rust build artifacts
 src-tauri/target/
-
-# IDE
 .vscode/
 .idea/
-
+.todos/
+.sidecar/
+.sidecar-agent
+.sidecar-task
+.sidecar-pr
+.sidecar-start.sh
+.sidecar-base
+.td-root
+AGENTS.md
