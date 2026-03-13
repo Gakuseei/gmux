@@ -9,6 +9,7 @@ use iced::{Background, Border, Element, Font, Length, Size, Theme};
 
 mod config;
 mod mouse_reporter;
+mod notifications;
 mod shortcuts;
 mod terminal;
 mod terminal_box;
@@ -16,6 +17,7 @@ mod theme;
 mod workspace;
 
 use crate::config::Config;
+use crate::notifications::NotificationDetector;
 use crate::terminal::TerminalEvent;
 use crate::terminal_box::TerminalBox;
 use crate::theme::{ColorScheme, UiTheme};
@@ -57,6 +59,7 @@ struct App {
     title: String,
     key_binds: HashMap<shortcuts::KeyBind, shortcuts::Action>,
     clipboard: Option<ClipboardContext>,
+    notification_detector: NotificationDetector,
 }
 
 #[derive(Debug, Clone)]
@@ -116,6 +119,7 @@ impl App {
             title: String::from("gmux"),
             key_binds: shortcuts::default_keybindings(),
             clipboard: ClipboardContext::new().ok(),
+            notification_detector: NotificationDetector::new(),
         }
     }
 
@@ -142,7 +146,11 @@ impl App {
                 }
             }
             Message::Tick => {
-                for ws in &mut self.workspaces {
+                let mut pending_notifications: Vec<(String, String)> =
+                    Vec::new();
+
+                for (ws_idx, ws) in self.workspaces.iter_mut().enumerate() {
+                    let is_active_ws = ws_idx == self.active_workspace;
                     let pane_keys: Vec<pane_grid::Pane> =
                         ws.panes.iter().map(|(p, _)| *p).collect();
                     for pane_key in pane_keys {
@@ -176,6 +184,28 @@ impl App {
                                     }
                                 }
                                 tab.terminal.needs_update = true;
+                            }
+
+                            let is_focused_pane =
+                                is_active_ws && ws.focus == pane_key;
+                            for (tab_idx, tab) in content.tabs.iter().enumerate()
+                            {
+                                let is_focused_tab = is_focused_pane
+                                    && tab_idx == content.active_tab;
+                                if !is_focused_tab {
+                                    let line = tab.terminal.last_line();
+                                    if !line.is_empty() {
+                                        let result =
+                                            self.notification_detector
+                                                .detect(&line);
+                                        if result.matched {
+                                            pending_notifications.push((
+                                                tab.name.clone(),
+                                                result.pattern,
+                                            ));
+                                        }
+                                    }
+                                }
                             }
 
                             for idx in tab_exits.into_iter().rev() {
@@ -214,6 +244,13 @@ impl App {
                             }
                         }
                     }
+                }
+
+                for (terminal_name, pattern_name) in pending_notifications {
+                    let _ = notifications::send_desktop_notification(
+                        &terminal_name,
+                        &pattern_name,
+                    );
                 }
             }
             Message::PaneClicked(pane) => {

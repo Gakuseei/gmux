@@ -7,7 +7,9 @@ use std::thread;
 use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
 use alacritty_terminal::event_loop::{EventLoop, Notifier, State as LoopState};
 use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::index::Column;
 use alacritty_terminal::sync::FairMutex;
+use alacritty_terminal::term::cell::Flags as CellFlags;
 use alacritty_terminal::term::{Config as TermConfig, TermMode};
 use alacritty_terminal::tty::{self, Options, Shell};
 use tokio::sync::mpsc;
@@ -196,5 +198,22 @@ impl Terminal {
 
     pub fn try_recv_event(&mut self) -> Option<TerminalEvent> {
         self.event_rx.try_recv().ok()
+    }
+
+    pub fn last_line(&self) -> String {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cursor_line = grid.cursor.point.line;
+        let cols = grid.columns();
+        let mut result = String::with_capacity(cols);
+        let row = &grid[cursor_line];
+        for col_idx in 0..cols {
+            let cell = &row[Column(col_idx)];
+            if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+            result.push(cell.c);
+        }
+        result.trim_end().to_string()
     }
 }
