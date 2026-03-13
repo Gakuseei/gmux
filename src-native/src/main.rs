@@ -1,6 +1,7 @@
 use iced::{Element, Font, Size, Theme};
 
 mod config;
+mod terminal;
 mod theme;
 
 fn main() -> iced::Result {
