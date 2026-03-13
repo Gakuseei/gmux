@@ -133,6 +133,7 @@ fn main() -> iced::Result {
         .theme(App::theme)
         .default_font(Font::MONOSPACE)
         .window_size(Size::new(window_width, window_height))
+        .exit_on_close_request(false)
         .subscription(App::subscription)
         .run()
 }
@@ -162,6 +163,7 @@ struct App {
     modal_path: String,
     modal_layout: LayoutTemplate,
     modal_agents: Vec<(AgentType, bool)>,
+    tick_count: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -214,6 +216,7 @@ enum Message {
     WorkspaceModalAgentRemove(usize),
     WorkspaceModalAgentBypass(usize, bool),
     WorkspaceModalCreate,
+    WindowCloseRequested(iced::window::Id),
 }
 
 impl App {
@@ -221,22 +224,118 @@ impl App {
         let config = Config::load();
         let color_scheme = ColorScheme::gmux_dark();
         let ui_theme = UiTheme::default();
+        let saved_state = config::AppState::load();
 
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-        let workspace = Workspace::new("Default", &home, &config);
+        let mut workspaces = Vec::new();
+        let mut active_workspace = 0;
 
-        let workspaces = match workspace {
-            Some(ws) => vec![ws],
-            None => Vec::new(),
-        };
+        for ws_state in &saved_state.workspaces {
+            let cwd = PathBuf::from(&ws_state.cwd);
+            if !cwd.exists() {
+                continue;
+            }
+
+            if ws_state.sessions.is_empty() {
+                if let Some(mut ws) = Workspace::new(&ws_state.name, &cwd, &config) {
+                    ws.id = ws_state.id.clone();
+                    ws.folder = ws_state.folder_id.clone();
+                    workspaces.push(ws);
+                }
+            } else {
+                let first_session = &ws_state.sessions[0];
+                let session_cwd = PathBuf::from(&first_session.cwd);
+                let effective_cwd = if session_cwd.exists() { &session_cwd } else { &cwd };
+
+                let first_tab = if let Some(ref cmd) = first_session.command {
+                    Workspace::create_tab_with_command(
+                        effective_cwd,
+                        &config,
+                        cmd,
+                        &first_session.name,
+                        first_session.bypass_permissions,
+                    )
+                } else {
+                    let mut tab = Workspace::create_tab(effective_cwd, &config);
+                    if let Some(ref mut t) = tab {
+                        t.name = first_session.name.clone();
+                        t.bypass = first_session.bypass_permissions;
+                    }
+                    tab
+                };
+
+                if let Some(tab) = first_tab {
+                    let content = PaneContent {
+                        tabs: vec![tab],
+                        active_tab: 0,
+                    };
+                    let (mut panes, first_pane) = pane_grid::State::new(content);
+
+                    for session in ws_state.sessions.iter().skip(1) {
+                        let s_cwd = PathBuf::from(&session.cwd);
+                        let s_effective_cwd = if s_cwd.exists() { &s_cwd } else { &cwd };
+
+                        let extra_tab = if let Some(ref cmd) = session.command {
+                            Workspace::create_tab_with_command(
+                                s_effective_cwd,
+                                &config,
+                                cmd,
+                                &session.name,
+                                session.bypass_permissions,
+                            )
+                        } else {
+                            let mut t = Workspace::create_tab(s_effective_cwd, &config);
+                            if let Some(ref mut t) = t {
+                                t.name = session.name.clone();
+                                t.bypass = session.bypass_permissions;
+                            }
+                            t
+                        };
+
+                        if let Some(t) = extra_tab {
+                            if let Some(c) = panes.get_mut(first_pane) {
+                                c.tabs.push(t);
+                            }
+                        }
+                    }
+
+                    let ws = Workspace {
+                        id: ws_state.id.clone(),
+                        name: ws_state.name.clone(),
+                        folder: ws_state.folder_id.clone(),
+                        panes,
+                        focus: first_pane,
+                        cwd: cwd.clone(),
+                    };
+                    workspaces.push(ws);
+                }
+            }
+        }
+
+        for (idx, ws_state) in saved_state.workspaces.iter().enumerate() {
+            if saved_state.active_workspace_id.as_deref() == Some(&ws_state.id) {
+                if idx < workspaces.len() {
+                    active_workspace = idx;
+                }
+                break;
+            }
+        }
+
+        if workspaces.is_empty() {
+            let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+            if let Some(ws) = Workspace::new("Default", &home, &config) {
+                workspaces.push(ws);
+            }
+        }
+
+        let sidebar_visible = !saved_state.sidebar_minimized;
 
         Self {
             workspaces,
-            active_workspace: 0,
+            active_workspace,
             config,
             color_scheme,
             ui_theme,
-            sidebar_visible: true,
+            sidebar_visible,
             active_view: AppView::Terminals,
             settings_open: false,
             title: String::from("gmux"),
@@ -255,6 +354,71 @@ impl App {
             modal_path: String::new(),
             modal_layout: LayoutTemplate::Single,
             modal_agents: vec![(AgentType::Shell, false)],
+            tick_count: 0,
+        }
+    }
+
+    fn save_state(&self) {
+        let workspaces: Vec<config::WorkspaceState> = self
+            .workspaces
+            .iter()
+            .map(|ws| {
+                let sessions: Vec<config::SessionState> = ws
+                    .panes
+                    .iter()
+                    .flat_map(|(_, content)| {
+                        content.tabs.iter().map(|tab| config::SessionState {
+                            id: tab.id.clone(),
+                            name: tab.name.clone(),
+                            shell: self.config.terminal.default_shell.clone(),
+                            cwd: ws.cwd.to_string_lossy().to_string(),
+                            command: None,
+                            bypass_permissions: tab.bypass,
+                        })
+                    })
+                    .collect();
+
+                config::WorkspaceState {
+                    id: ws.id.clone(),
+                    name: ws.name.clone(),
+                    folder_id: ws.folder.clone(),
+                    cwd: ws.cwd.to_string_lossy().to_string(),
+                    sessions,
+                }
+            })
+            .collect();
+
+        let state = config::AppState {
+            workspaces,
+            folders: Vec::new(),
+            active_workspace_id: self
+                .workspaces
+                .get(self.active_workspace)
+                .map(|ws| ws.id.clone()),
+            sidebar_width: if self.sidebar_visible {
+                config::AppState::default().sidebar_width
+            } else {
+                0.0
+            },
+            sidebar_minimized: !self.sidebar_visible,
+            window_width: 0.0,
+            window_height: 0.0,
+            window_x: 0,
+            window_y: 0,
+            recent_paths: Vec::new(),
+        };
+
+        let _ = state.save();
+
+        for ws in &self.workspaces {
+            for (_, content) in ws.panes.iter() {
+                for tab in &content.tabs {
+                    let _ = scrollback::save_scrollback(
+                        &tab.terminal.id,
+                        &tab.terminal.grid_content(),
+                    );
+                }
+            }
         }
     }
 
@@ -390,6 +554,11 @@ impl App {
                         &terminal_name,
                         &pattern_name,
                     );
+                }
+
+                self.tick_count = self.tick_count.wrapping_add(1);
+                if self.tick_count % 1800 == 0 {
+                    self.save_state();
                 }
             }
             Message::PaneClicked(pane) => {
@@ -849,6 +1018,10 @@ impl App {
                     self.active_workspace = self.workspaces.len() - 1;
                     self.workspace_modal_open = false;
                 }
+            }
+            Message::WindowCloseRequested(id) => {
+                self.save_state();
+                return iced::window::close(id);
             }
         }
         iced::Task::none()
@@ -2623,6 +2796,9 @@ impl App {
             }
         });
 
-        iced::Subscription::batch([tick, keys])
+        let window_close =
+            iced::window::close_requests().map(Message::WindowCloseRequested);
+
+        iced::Subscription::batch([tick, keys, window_close])
     }
 }
