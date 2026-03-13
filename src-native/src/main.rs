@@ -1,10 +1,13 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use iced::keyboard::{Key, Modifiers};
 use iced::widget::{button, column, container, pane_grid, row, scrollable, text, Space};
 use iced::{Background, Border, Element, Font, Length, Size, Theme};
 
 mod config;
+mod shortcuts;
 mod terminal;
 mod terminal_box;
 mod theme;
@@ -50,6 +53,7 @@ struct App {
     active_view: AppView,
     settings_open: bool,
     title: String,
+    key_binds: HashMap<shortcuts::KeyBind, shortcuts::Action>,
 }
 
 #[derive(Debug, Clone)]
@@ -80,6 +84,7 @@ enum Message {
     WorkspaceNew,
     ViewSwitch(AppView),
     SettingsToggle,
+    KeyEvent(Key, Modifiers),
 }
 
 impl App {
@@ -106,6 +111,7 @@ impl App {
             active_view: AppView::Terminals,
             settings_open: false,
             title: String::from("gmux"),
+            key_binds: shortcuts::default_keybindings(),
         }
     }
 
@@ -413,6 +419,13 @@ impl App {
             }
             Message::SettingsToggle => {
                 self.settings_open = !self.settings_open;
+            }
+            Message::KeyEvent(key, modifiers) => {
+                if let Some(action) =
+                    shortcuts::lookup(&self.key_binds, modifiers, &key)
+                {
+                    return self.handle_shortcut(action);
+                }
             }
         }
         iced::Task::none()
@@ -815,6 +828,79 @@ impl App {
         column![top_bar, main_content].into()
     }
 
+    fn handle_shortcut(
+        &mut self,
+        action: shortcuts::Action,
+    ) -> iced::Task<Message> {
+        match action {
+            shortcuts::Action::Copy => {}
+            shortcuts::Action::Paste => {}
+            shortcuts::Action::TabNew => return self.update(Message::TabNew),
+            shortcuts::Action::TabClose => {
+                if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                    let pane = ws.focus;
+                    if let Some(content) = ws.panes.get(pane) {
+                        let idx = content.active_tab;
+                        return self.update(Message::TabClose(pane, idx));
+                    }
+                }
+            }
+            shortcuts::Action::TabNext => {
+                return self.update(Message::TabNext)
+            }
+            shortcuts::Action::TabPrev => {
+                return self.update(Message::TabPrev)
+            }
+            shortcuts::Action::TabJump(idx) => {
+                if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                    let pane = ws.focus;
+                    return self
+                        .update(Message::TabActivate(pane, idx));
+                }
+            }
+            shortcuts::Action::PaneSplitHorizontal => {
+                return self
+                    .update(Message::PaneSplit(pane_grid::Axis::Horizontal))
+            }
+            shortcuts::Action::PaneSplitVertical => {
+                return self
+                    .update(Message::PaneSplit(pane_grid::Axis::Vertical))
+            }
+            shortcuts::Action::PaneClose => {
+                return self.update(Message::PaneClose)
+            }
+            shortcuts::Action::PaneFocusUp => {
+                return self.update(Message::PaneFocusUp)
+            }
+            shortcuts::Action::PaneFocusDown => {
+                return self.update(Message::PaneFocusDown)
+            }
+            shortcuts::Action::PaneFocusLeft => {
+                return self.update(Message::PaneFocusLeft)
+            }
+            shortcuts::Action::PaneFocusRight => {
+                return self.update(Message::PaneFocusRight)
+            }
+            shortcuts::Action::PaneMaximize => {
+                return self.update(Message::PaneToggleMaximized)
+            }
+            shortcuts::Action::WorkspaceNew => {
+                return self.update(Message::WorkspaceNew)
+            }
+            shortcuts::Action::Find => {}
+            shortcuts::Action::FontSizeIncrease => {}
+            shortcuts::Action::FontSizeDecrease => {}
+            shortcuts::Action::FontSizeReset => {}
+            shortcuts::Action::SidebarToggle => {
+                return self.update(Message::SidebarToggle)
+            }
+            shortcuts::Action::SettingsToggle => {
+                return self.update(Message::SettingsToggle)
+            }
+        }
+        iced::Task::none()
+    }
+
     fn move_focus(&mut self, direction: pane_grid::Direction) {
         if let Some(ws) = self.workspaces.get_mut(self.active_workspace) {
             if let Some(adj) = ws.panes.adjacent(ws.focus, direction) {
@@ -840,6 +926,22 @@ impl App {
     }
 
     fn subscription(&self) -> iced::Subscription<Message> {
-        iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick)
+        let tick =
+            iced::time::every(Duration::from_millis(16)).map(|_| Message::Tick);
+
+        let keys = iced::event::listen_with(|event, _status, _window| {
+            if let iced::event::Event::Keyboard(
+                iced::keyboard::Event::KeyPressed {
+                    key, modifiers, ..
+                },
+            ) = event
+            {
+                Some(Message::KeyEvent(key, modifiers))
+            } else {
+                None
+            }
+        });
+
+        iced::Subscription::batch([tick, keys])
     }
 }
