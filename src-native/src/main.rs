@@ -1,5 +1,7 @@
 use iced::{Element, Font, Size, Theme};
 
+mod config;
+
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
         .title("gmux")
