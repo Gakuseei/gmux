@@ -14,14 +14,14 @@
 </script>
 
 <footer class="statusbar">
-	<span class="item">&SquareIntersection; {statusStore.gitBranch}</span>
-	<span class="sep">&middot;</span>
+	<span class="item">&#9095; {statusStore.gitBranch}</span>
+	<span class="sep">&#183;</span>
 	<span class="item">{statusStore.model}</span>
-	<span class="sep">&middot;</span>
+	<span class="sep">&#183;</span>
 	<span class="item">reasoning: {statusStore.reasoning}</span>
-	<span class="sep">&middot;</span>
-	<span class="item">&UpArrow;{formatTokens(statusStore.inputTokens)} &DownArrow;{formatTokens(statusStore.outputTokens)}</span>
-	<span class="sep">&middot;</span>
+	<span class="sep">&#183;</span>
+	<span class="item">&#8593;{formatTokens(statusStore.inputTokens)} &#8595;{formatTokens(statusStore.outputTokens)}</span>
+	<span class="sep">&#183;</span>
 	<span class="item">ctx {statusStore.contextPercent}% ({formatK(statusStore.contextUsed)}/{formatK(statusStore.contextTotal)})</span>
 </footer>
 

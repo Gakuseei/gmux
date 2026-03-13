@@ -18,9 +18,9 @@
 	}
 
 	let cliDefs = $derived([
-		{ name: 'Claude Code', command: settingsStore.aiClis.claude.path },
-		{ name: 'Codex CLI', command: settingsStore.aiClis.codex.path },
-		{ name: 'Gemini CLI', command: settingsStore.aiClis.gemini.path },
+		...(settingsStore.aiClis.claude.enabled ? [{ name: 'Claude Code', command: settingsStore.aiClis.claude.path }] : []),
+		...(settingsStore.aiClis.codex.enabled ? [{ name: 'Codex CLI', command: settingsStore.aiClis.codex.path }] : []),
+		...(settingsStore.aiClis.gemini.enabled ? [{ name: 'Gemini CLI', command: settingsStore.aiClis.gemini.path }] : []),
 		...settingsStore.aiClis.custom.map((c) => ({ name: c.name, command: c.command })),
 	]);
 

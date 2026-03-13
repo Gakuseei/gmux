@@ -25,30 +25,32 @@
 		return cost(input, rates.input) + cost(output, rates.output) + cost(cacheRead, rates.cacheRead) + cost(cacheWrite, rates.cacheWrite);
 	}
 
-	function fiveHourUsage(): number {
+	const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
+
+	let fiveHourUsage = $derived.by(() => {
 		if (!usageStore.data) return 0;
-		const cutoff = Date.now() - 5 * 60 * 60 * 1000;
+		const cutoff = Date.now() - FIVE_HOURS_MS;
 		return usageStore.data.sessions
 			.filter((s) => new Date(s.timestamp).getTime() > cutoff)
 			.reduce((acc, s) => acc + s.input_tokens + s.output_tokens, 0);
-	}
+	});
 
-	function fiveHourResetMinutes(): number {
+	let fiveHourResetMinutes = $derived.by(() => {
 		if (!usageStore.data || usageStore.data.sessions.length === 0) return 0;
-		const cutoff = Date.now() - 5 * 60 * 60 * 1000;
+		const cutoff = Date.now() - FIVE_HOURS_MS;
 		const relevantSessions = usageStore.data.sessions.filter(
 			(s) => new Date(s.timestamp).getTime() > cutoff
 		);
 		if (relevantSessions.length === 0) return 0;
 		const oldest = Math.min(...relevantSessions.map((s) => new Date(s.timestamp).getTime()));
-		const resetAt = oldest + 5 * 60 * 60 * 1000;
+		const resetAt = oldest + FIVE_HOURS_MS;
 		return Math.max(0, Math.ceil((resetAt - Date.now()) / 60_000));
-	}
+	});
 
-	function weeklyUsage(): number {
+	let weeklyUsageVal = $derived.by(() => {
 		if (!usageStore.data) return 0;
 		return usageStore.data.sessions.reduce((acc, s) => acc + s.input_tokens + s.output_tokens, 0);
-	}
+	});
 
 	function progressPercent(used: number, limit: number): number {
 		return Math.min(100, (used / limit) * 100);
@@ -143,23 +145,23 @@
 			<div class="rate-limit-item">
 				<div class="rate-label">
 					<span>5h Window</span>
-					<span class="rate-stats">{formatTokens(fiveHourUsage())} / {formatTokens(fiveHourLimit)}</span>
+					<span class="rate-stats">{formatTokens(fiveHourUsage)} / {formatTokens(fiveHourLimit)}</span>
 				</div>
 				<div class="progress-bar">
-					<div class="progress-fill" style:width="{progressPercent(fiveHourUsage(), fiveHourLimit)}%" style:background={progressColor(progressPercent(fiveHourUsage(), fiveHourLimit))}></div>
+					<div class="progress-fill" style:width="{progressPercent(fiveHourUsage, fiveHourLimit)}%" style:background={progressColor(progressPercent(fiveHourUsage, fiveHourLimit))}></div>
 				</div>
-				{#if fiveHourResetMinutes() > 0}
-					<span class="reset-text">Resets in {formatMinutes(fiveHourResetMinutes())}</span>
+				{#if fiveHourResetMinutes > 0}
+					<span class="reset-text">Resets in {formatMinutes(fiveHourResetMinutes)}</span>
 				{/if}
 			</div>
 
 			<div class="rate-limit-item">
 				<div class="rate-label">
 					<span>Weekly</span>
-					<span class="rate-stats">{formatTokens(weeklyUsage())} / {formatTokens(weeklyLimit)}</span>
+					<span class="rate-stats">{formatTokens(weeklyUsageVal)} / {formatTokens(weeklyLimit)}</span>
 				</div>
 				<div class="progress-bar">
-					<div class="progress-fill" style:width="{progressPercent(weeklyUsage(), weeklyLimit)}%" style:background={progressColor(progressPercent(weeklyUsage(), weeklyLimit))}></div>
+					<div class="progress-fill" style:width="{progressPercent(weeklyUsageVal, weeklyLimit)}%" style:background={progressColor(progressPercent(weeklyUsageVal, weeklyLimit))}></div>
 				</div>
 			</div>
 		</section>

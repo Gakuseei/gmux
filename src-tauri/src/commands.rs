@@ -117,7 +117,8 @@ fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, on_event: Channel<Termi
                         .send(TerminalEvent::Output { data: encoded })
                         .ok();
                 }
-                Err(_) => {
+                Err(e) => {
+                    eprintln!("PTY reader error: {e}");
                     on_event.send(TerminalEvent::Exit { code: None }).ok();
                     break;
                 }
@@ -132,7 +133,7 @@ pub fn write_pty(
     data: String,
     state: State<'_, Arc<Mutex<PtyManager>>>,
 ) -> Result<(), String> {
-    let manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+    let mut manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
     manager
         .write(&id, data.as_bytes())
         .map_err(|e: anyhow::Error| e.to_string())
@@ -145,7 +146,7 @@ pub fn resize_pty(
     cols: u16,
     state: State<'_, Arc<Mutex<PtyManager>>>,
 ) -> Result<(), String> {
-    let manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+    let mut manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
     manager
         .resize(&id, rows, cols)
         .map_err(|e: anyhow::Error| e.to_string())

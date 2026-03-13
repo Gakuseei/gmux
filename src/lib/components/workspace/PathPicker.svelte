@@ -70,9 +70,9 @@
 	</div>
 
 	{#if showRecent && recentPaths.length > 0}
-		<div class="recent-dropdown">
+		<div class="recent-dropdown" role="listbox" aria-label="Recent paths">
 			{#each recentPaths as entry}
-				<button class="recent-item" onclick={() => selectRecent(entry.path)}>
+				<button class="recent-item" role="option" aria-selected={entry.path === value} onclick={() => selectRecent(entry.path)}>
 					<span class="recent-path">{entry.path}</span>
 					<span class="recent-time">{formatRelativeTime(entry.lastUsed)}</span>
 				</button>

@@ -23,14 +23,18 @@ const INPUT_TOKENS = /(\d[\d,]+)\s*(?:input|↑)\s*tokens?/i;
 const OUTPUT_TOKENS = /(\d[\d,]+)\s*(?:output|↓)\s*tokens?/i;
 const CONTEXT_PERCENT = /(?:context|ctx)[:\s]*(\d+)%/i;
 const CONTEXT_LEFT = /(\d+)% context left/i;
-const CONTEXT_ABSOLUTE = /(\d+)k?\s*\/\s*(\d+)k/i;
+const CONTEXT_ABSOLUTE = /(\d+)(k)?\s*\/\s*(\d+)(k)/i;
 
 function parseNum(s: string): number {
 	return parseInt(s.replace(/,/g, ''), 10);
 }
 
+const STATUS_KEYWORDS = /claude|gpt|gemini|token|context|ctx|reason|extra high|\d+k?\s*\/\s*\d+k/i;
+
 export function parseStatusLine(line: string): Partial<StatusInfo> {
 	const result: Partial<StatusInfo> = {};
+
+	if (!STATUS_KEYWORDS.test(line)) return result;
 
 	for (const pat of MODEL_PATTERNS) {
 		const m = line.match(pat);
@@ -62,8 +66,8 @@ export function parseStatusLine(line: string): Partial<StatusInfo> {
 
 	const ctxAbs = line.match(CONTEXT_ABSOLUTE);
 	if (ctxAbs) {
-		const used = ctxAbs[1].endsWith('k') ? parseNum(ctxAbs[1]) * 1000 : parseNum(ctxAbs[1]);
-		const total = ctxAbs[2].endsWith('k') ? parseNum(ctxAbs[2]) * 1000 : parseNum(ctxAbs[2]);
+		const used = ctxAbs[2] === 'k' ? parseNum(ctxAbs[1]) * 1000 : parseNum(ctxAbs[1]);
+		const total = ctxAbs[4] === 'k' ? parseNum(ctxAbs[3]) * 1000 : parseNum(ctxAbs[3]);
 		result.contextUsed = used;
 		result.contextTotal = total;
 	}

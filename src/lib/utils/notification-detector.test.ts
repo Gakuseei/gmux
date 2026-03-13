@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { detectNotification, createLineBuffer } from './notification-detector';
 
 describe('detectNotification', () => {
@@ -96,5 +96,28 @@ describe('createLineBuffer', () => {
 		const buffer = createLineBuffer((line) => lines.push(line));
 		buffer('');
 		expect(lines).toEqual([]);
+	});
+
+	it('flushes trailing content after timeout', async () => {
+		vi.useFakeTimers();
+		const lines: string[] = [];
+		const buffer = createLineBuffer((line) => lines.push(line));
+		buffer('trailing');
+		expect(lines).toEqual([]);
+		vi.advanceTimersByTime(500);
+		expect(lines).toEqual(['trailing']);
+		vi.useRealTimers();
+	});
+
+	it('does not double-emit when newline arrives after flush', async () => {
+		vi.useFakeTimers();
+		const lines: string[] = [];
+		const buffer = createLineBuffer((line) => lines.push(line));
+		buffer('partial');
+		vi.advanceTimersByTime(500);
+		expect(lines).toEqual(['partial']);
+		buffer('\n');
+		expect(lines).toEqual(['partial', '']);
+		vi.useRealTimers();
 	});
 });

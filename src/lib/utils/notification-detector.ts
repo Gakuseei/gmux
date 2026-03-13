@@ -18,10 +18,16 @@ const DEFAULT_PATTERNS: PatternDef[] = [
 	{ name: 'gemini-prompt', regex: />>>\s*$/ }
 ];
 
+const NOTIFICATION_KEYWORDS = /[❯›?]|waiting|permission|approve|shortcuts|codex|>>>/i;
+
 export function detectNotification(
 	line: string,
 	customPatterns?: PatternDef[]
 ): DetectionResult {
+	if (!customPatterns && !NOTIFICATION_KEYWORDS.test(line)) {
+		return { matched: false, pattern: '' };
+	}
+
 	const patterns = customPatterns ? [...DEFAULT_PATTERNS, ...customPatterns] : DEFAULT_PATTERNS;
 
 	for (const p of patterns) {
@@ -33,15 +39,33 @@ export function detectNotification(
 	return { matched: false, pattern: '' };
 }
 
+const FLUSH_TIMEOUT_MS = 500;
+
 export function createLineBuffer(onLine: (line: string) => void): (chunk: string) => void {
 	let buffer = '';
+	let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 	return (chunk: string) => {
+		if (flushTimer) {
+			clearTimeout(flushTimer);
+			flushTimer = null;
+		}
+
 		buffer += chunk;
 		const lines = buffer.split('\n');
 		buffer = lines.pop()!;
 		for (const line of lines) {
 			onLine(line);
+		}
+
+		if (buffer.length > 0) {
+			flushTimer = setTimeout(() => {
+				if (buffer.length > 0) {
+					onLine(buffer);
+					buffer = '';
+				}
+				flushTimer = null;
+			}, FLUSH_TIMEOUT_MS);
 		}
 	};
 }

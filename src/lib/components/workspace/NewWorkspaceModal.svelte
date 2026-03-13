@@ -29,12 +29,23 @@
 	let name = $state('');
 	let cwd = $state('');
 	let selectedLayout = $state('single');
-	let agents = $state<AgentConfig[]>([
-		{ type: 'claude', label: 'Claude Code', command: 'claude', count: 0, bypassPermissions: false },
-		{ type: 'codex', label: 'Codex CLI', command: 'codex', count: 0, bypassPermissions: false },
-		{ type: 'gemini', label: 'Gemini CLI', command: 'gemini', count: 0 },
-		{ type: 'shell', label: 'Shell', command: '', count: 0 }
-	]);
+	let launching = $state(false);
+	function buildAgentList(): AgentConfig[] {
+		const list: AgentConfig[] = [];
+		if (settingsStore.aiClis.claude.enabled) {
+			list.push({ type: 'claude', label: 'Claude Code', command: settingsStore.aiClis.claude.path, count: 0, bypassPermissions: false });
+		}
+		if (settingsStore.aiClis.codex.enabled) {
+			list.push({ type: 'codex', label: 'Codex CLI', command: settingsStore.aiClis.codex.path, count: 0, bypassPermissions: false });
+		}
+		if (settingsStore.aiClis.gemini.enabled) {
+			list.push({ type: 'gemini', label: 'Gemini CLI', command: settingsStore.aiClis.gemini.path, count: 0 });
+		}
+		list.push({ type: 'shell', label: 'Shell', command: '', count: 0 });
+		return list;
+	}
+
+	let agents = $state<AgentConfig[]>(buildAgentList());
 
 	let totalSlots = $derived(TEMPLATE_SLOTS[selectedLayout] ?? 1);
 
@@ -69,6 +80,8 @@
 	}
 
 	async function launch() {
+		if (launching) return;
+		launching = true;
 		const defaultShell = settingsStore.terminal.defaultShell || '/bin/bash';
 		const sessions: TerminalSession[] = [];
 
@@ -78,7 +91,7 @@
 					id: crypto.randomUUID(),
 					name: agent.count > 1 ? `${agent.label} ${i + 1}` : agent.label,
 					shell: defaultShell,
-					cwd: cwd || '~',
+					cwd: cwd || '',
 					command: buildCommand(agent) || undefined,
 					bypassPermissions: (agent.type === 'claude' || agent.type === 'codex') ? agent.bypassPermissions : undefined,
 					status: 'ready',
@@ -93,7 +106,7 @@
 				id: crypto.randomUUID(),
 				name: `Shell ${sessions.length + 1}`,
 				shell: defaultShell,
-				cwd: cwd || '~',
+				cwd: cwd || '',
 				status: 'ready',
 				notificationCount: 0
 			});
@@ -104,7 +117,7 @@
 		const workspace: Workspace = {
 			id: crypto.randomUUID(),
 			name: name || 'Untitled',
-			cwd: cwd || '~',
+			cwd: cwd || '',
 			layout,
 			sessions,
 			createdAt: new Date().toISOString()
@@ -116,6 +129,7 @@
 			recentPathsStore.addPath(cwd);
 		}
 
+		launching = false;
 		close();
 	}
 
@@ -187,8 +201,10 @@
 		</div>
 
 		<div class="modal-footer">
-			<button class="btn btn-cancel" onclick={close}>Cancel</button>
-			<button class="btn btn-launch" onclick={launch}>Launch</button>
+			<button class="btn btn-cancel" onclick={close} disabled={launching}>Cancel</button>
+			<button class="btn btn-launch" onclick={launch} disabled={launching}>
+				{launching ? 'Launching...' : 'Launch'}
+			</button>
 		</div>
 	</div>
 </div>

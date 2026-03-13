@@ -47,10 +47,16 @@ describe('parseStatusLine', () => {
 		expect(result.contextPercent).toBe(25);
 	});
 
-	it('extracts absolute context usage', () => {
+	it('extracts absolute context usage with k suffix', () => {
 		const result = parseStatusLine('50k / 200k');
-		expect(result.contextUsed).toBe(50);
-		expect(result.contextTotal).toBe(200);
+		expect(result.contextUsed).toBe(50000);
+		expect(result.contextTotal).toBe(200000);
+	});
+
+	it('extracts absolute context usage without k on used', () => {
+		const result = parseStatusLine('500 / 200k');
+		expect(result.contextUsed).toBe(500);
+		expect(result.contextTotal).toBe(200000);
 	});
 
 	it('returns empty for unrelated lines', () => {

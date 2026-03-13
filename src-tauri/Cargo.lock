@@ -1418,6 +1418,7 @@ dependencies = [
  "git2",
  "glob",
  "portable-pty",
+ "regex",
  "serde",
  "serde_json",
  "tauri",

@@ -70,13 +70,13 @@
 		<Sidebar />
 	</div>
 
-	<div class="content-area">
+	<main class="content-area">
 		{#if appStore.activeView === 'terminals'}
 			<TerminalView />
 		{:else if appStore.activeView === 'insights'}
 			<InsightsView />
 		{/if}
-	</div>
+	</main>
 
 	<div class="statusbar-area">
 		<StatusBar />

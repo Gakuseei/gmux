@@ -9,6 +9,15 @@ export default defineConfig(async () => ({
   test: {
     include: ["src/**/*.test.ts"],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          xterm: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links", "@xterm/addon-search", "@xterm/addon-webgl"],
+        },
+      },
+    },
+  },
   server: {
     port: 1420,
     strictPort: true,

@@ -1,44 +1,33 @@
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
 
 pub struct PtyInstance {
-    writer: Arc<Mutex<Box<dyn Write + Send>>>,
-    master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
-    child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
+    writer: Box<dyn Write + Send>,
+    master: Box<dyn portable_pty::MasterPty + Send>,
+    child: Box<dyn portable_pty::Child + Send + Sync>,
 }
 
 impl PtyInstance {
-    pub fn write(&self, data: &[u8]) -> anyhow::Result<()> {
-        self.writer
-            .lock()
-            .map_err(|e| anyhow::anyhow!("{e}"))?
-            .write_all(data)?;
+    pub fn write(&mut self, data: &[u8]) -> anyhow::Result<()> {
+        self.writer.write_all(data)?;
         Ok(())
     }
 
-    pub fn resize(&self, rows: u16, cols: u16) -> anyhow::Result<()> {
-        self.master
-            .lock()
-            .map_err(|e| anyhow::anyhow!("{e}"))?
-            .resize(PtySize {
-                rows,
-                cols,
-                pixel_width: 0,
-                pixel_height: 0,
-            })?;
+    pub fn resize(&mut self, rows: u16, cols: u16) -> anyhow::Result<()> {
+        self.master.resize(PtySize {
+            rows,
+            cols,
+            pixel_width: 0,
+            pixel_height: 0,
+        })?;
         Ok(())
     }
 
-    pub fn kill(&self) -> anyhow::Result<()> {
-        self.child
-            .lock()
-            .map_err(|e| anyhow::anyhow!("{e}"))?
-            .kill()?;
+    pub fn kill(&mut self) -> anyhow::Result<()> {
+        self.child.kill()?;
         Ok(())
     }
-
 }
 
 pub struct PtyManager {
@@ -70,7 +59,15 @@ impl PtyManager {
         })?;
 
         let mut cmd = CommandBuilder::new(shell);
-        cmd.cwd(cwd);
+        let resolved_cwd = if cwd.is_empty() || cwd == "~" {
+            dirs::home_dir()
+                .unwrap_or_else(|| std::path::PathBuf::from("/"))
+                .to_string_lossy()
+                .to_string()
+        } else {
+            cwd.to_string()
+        };
+        cmd.cwd(&resolved_cwd);
         cmd.env("TERM", "xterm-256color");
         for (key, value) in &env_vars {
             cmd.env(key, value);
@@ -83,9 +80,9 @@ impl PtyManager {
         let id = uuid::Uuid::new_v4().to_string();
 
         let instance = PtyInstance {
-            writer: Arc::new(Mutex::new(writer)),
-            master: Arc::new(Mutex::new(pair.master)),
-            child: Arc::new(Mutex::new(child)),
+            writer,
+            master: pair.master,
+            child,
         };
 
         self.instances.insert(id.clone(), instance);
@@ -93,23 +90,23 @@ impl PtyManager {
         Ok((id, reader))
     }
 
-    pub fn write(&self, id: &str, data: &[u8]) -> anyhow::Result<()> {
+    pub fn write(&mut self, id: &str, data: &[u8]) -> anyhow::Result<()> {
         self.instances
-            .get(id)
+            .get_mut(id)
             .ok_or_else(|| anyhow::anyhow!("pty {id} not found"))?
             .write(data)
     }
 
-    pub fn resize(&self, id: &str, rows: u16, cols: u16) -> anyhow::Result<()> {
+    pub fn resize(&mut self, id: &str, rows: u16, cols: u16) -> anyhow::Result<()> {
         self.instances
-            .get(id)
+            .get_mut(id)
             .ok_or_else(|| anyhow::anyhow!("pty {id} not found"))?
             .resize(rows, cols)
     }
 
     pub fn kill(&mut self, id: &str) -> anyhow::Result<()> {
         self.instances
-            .get(id)
+            .get_mut(id)
             .ok_or_else(|| anyhow::anyhow!("pty {id} not found"))?
             .kill()
     }

@@ -25,6 +25,15 @@
 	let ratio = $derived(initialRatio + ratioOffset);
 	let dragging = $state(false);
 	let containerEl: HTMLDivElement | undefined = $state();
+	let lastKnownRatio = $state(0.5);
+
+	$effect(() => {
+		const current = node.ratio ?? 0.5;
+		if (current !== lastKnownRatio && !dragging) {
+			ratioOffset = 0;
+		}
+		lastKnownRatio = current;
+	});
 
 	const RATIO_MIN = 0.1;
 	const RATIO_MAX = 0.9;

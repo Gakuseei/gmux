@@ -28,3 +28,4 @@ chrono = { version = "0.4", features = ["serde"] }
 glob = "0.3"
 anyhow = "1.0.102"
 base64 = "0.22"
+regex = "1"

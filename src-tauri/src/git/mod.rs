@@ -310,6 +310,14 @@ pub fn unstage_file(path: String, file: String) -> Result<(), String> {
 #[tauri::command]
 pub fn revert_file(path: String, file: String) -> Result<(), String> {
     let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+    let workdir = repo.workdir().ok_or("No workdir")?;
+    let canonical_workdir = workdir.canonicalize().map_err(|e| e.to_string())?;
+    let full_path = workdir.join(&file);
+    let canonical_full = full_path.canonicalize().unwrap_or_else(|_| workdir.join(&file));
+    if !canonical_full.starts_with(&canonical_workdir) {
+        return Err("Path escapes repository working directory".to_string());
+    }
+
     let head = repo.head().map_err(|e| e.to_string())?;
     let tree = head.peel_to_tree().map_err(|e| e.to_string())?;
     let obj = tree.get_path(std::path::Path::new(&file));
@@ -324,8 +332,6 @@ pub fn revert_file(path: String, file: String) -> Result<(), String> {
             .map_err(|e| e.to_string())?;
         }
         Err(_) => {
-            let workdir = repo.workdir().ok_or("No workdir")?;
-            let full_path = workdir.join(&file);
             if full_path.exists() {
                 std::fs::remove_file(&full_path).map_err(|e| e.to_string())?;
             }

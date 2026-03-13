@@ -1,6 +1,50 @@
 <script lang="ts">
 	import { gitStore } from '$lib/stores/git.svelte';
+	import { confirm } from '@tauri-apps/plugin-dialog';
 	import DiffView from './DiffView.svelte';
+
+	let errorMessage = $state<string | null>(null);
+
+	async function handleStageFile(path: string) {
+		errorMessage = null;
+		try {
+			await gitStore.stageFile(path);
+		} catch (e) {
+			errorMessage = `Failed to stage ${path}: ${String(e)}`;
+		}
+	}
+
+	async function handleUnstageFile(path: string) {
+		errorMessage = null;
+		try {
+			await gitStore.unstageFile(path);
+		} catch (e) {
+			errorMessage = `Failed to unstage ${path}: ${String(e)}`;
+		}
+	}
+
+	async function handleRevertFile(path: string) {
+		errorMessage = null;
+		const confirmed = await confirm(`Revert ${path}? This cannot be undone.`, {
+			title: 'Confirm Revert',
+			kind: 'warning'
+		});
+		if (!confirmed) return;
+		try {
+			await gitStore.revertFile(path);
+		} catch (e) {
+			errorMessage = `Failed to revert ${path}: ${String(e)}`;
+		}
+	}
+
+	async function handleStageAll() {
+		errorMessage = null;
+		try {
+			for (const f of gitStore.files) await gitStore.stageFile(f.path);
+		} catch (e) {
+			errorMessage = `Failed to stage all: ${String(e)}`;
+		}
+	}
 
 	function statusIcon(status: string): string {
 		switch (status) {
@@ -35,6 +79,12 @@
 	<div class="empty-state">No workspace selected</div>
 {:else}
 	<div class="git-tab">
+		{#if errorMessage}
+			<div class="error-banner">
+				<span>{errorMessage}</span>
+				<button class="error-dismiss" onclick={() => (errorMessage = null)} aria-label="Dismiss error">&times;</button>
+			</div>
+		{/if}
 		<div class="toolbar">
 			<div class="branch-select-wrapper">
 				<select
@@ -82,9 +132,7 @@
 					<div class="section-actions">
 						<button
 							class="action-btn"
-							onclick={() => {
-								for (const f of gitStore.files) gitStore.stageFile(f.path);
-							}}
+							onclick={handleStageAll}
 						>
 							Stage All
 						</button>
@@ -122,7 +170,7 @@
 							<button
 								class="icon-action"
 								title="Stage"
-								onclick={(e: MouseEvent) => { e.stopPropagation(); gitStore.stageFile(file.path); }}
+								onclick={(e: MouseEvent) => { e.stopPropagation(); handleStageFile(file.path); }}
 							>
 								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<polyline points="20 6 9 17 4 12" />
@@ -131,7 +179,7 @@
 							<button
 								class="icon-action"
 								title="Unstage"
-								onclick={(e: MouseEvent) => { e.stopPropagation(); gitStore.unstageFile(file.path); }}
+								onclick={(e: MouseEvent) => { e.stopPropagation(); handleUnstageFile(file.path); }}
 							>
 								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<path d="M18 6L6 18M6 6l12 12" />
@@ -140,7 +188,7 @@
 							<button
 								class="icon-action danger"
 								title="Revert"
-								onclick={(e: MouseEvent) => { e.stopPropagation(); gitStore.revertFile(file.path); }}
+								onclick={(e: MouseEvent) => { e.stopPropagation(); handleRevertFile(file.path); }}
 							>
 								<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
 									<path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
@@ -404,5 +452,27 @@
 
 	.icon-action.danger:hover {
 		color: #f87171;
+	}
+
+	.error-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 6px 12px;
+		background: rgba(239, 68, 68, 0.15);
+		border-bottom: 1px solid rgba(239, 68, 68, 0.3);
+		color: #f87171;
+		font-size: 12px;
+		flex-shrink: 0;
+	}
+
+	.error-dismiss {
+		background: none;
+		border: none;
+		color: #f87171;
+		font-size: 16px;
+		cursor: pointer;
+		padding: 0 4px;
+		line-height: 1;
 	}
 </style>

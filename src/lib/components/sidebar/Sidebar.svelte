@@ -9,11 +9,15 @@
 	const SIDEBAR_MAX = 400;
 	const SIDEBAR_KEYBOARD_STEP = 10;
 
+	let sidebarEl: HTMLElement | undefined = $state();
+
 	function startResize(e: MouseEvent) {
 		e.preventDefault();
 		resizing = true;
+		const rect = sidebarEl?.getBoundingClientRect();
+		const leftOffset = rect?.left ?? 0;
 		const onMouseMove = (ev: MouseEvent) => {
-			const width = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX));
+			const width = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX - leftOffset));
 			appStore.sidebarWidth = width;
 		};
 		const onMouseUp = () => {
@@ -36,7 +40,7 @@
 	}
 </script>
 
-<aside class="sidebar" class:minimized={appStore.sidebarMinimized} class:resizing>
+<aside bind:this={sidebarEl} class="sidebar" class:minimized={appStore.sidebarMinimized} class:resizing>
 	{#if appStore.sidebarMinimized}
 		<div class="mini-content">
 			<button class="mini-action" title="New Workspace" aria-label="New workspace" onclick={() => (appStore.showNewWorkspaceModal = true)}>
