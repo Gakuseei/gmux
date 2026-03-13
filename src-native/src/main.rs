@@ -162,11 +162,20 @@ impl App {
                         .map(|(p, _)| *p)
                         .collect();
                     for pane in empty_panes {
-                        if ws.panes.len() > 1 {
+                        let pane_count = ws.panes.len();
+                        if pane_count > 1 {
                             if let Some(sibling) = ws.panes.close(pane) {
                                 if ws.focus == pane {
                                     ws.focus = sibling.1;
                                 }
+                            }
+                        } else if let Some(tab) = Workspace::create_tab(
+                            &ws.cwd,
+                            &self.config,
+                        ) {
+                            if let Some(content) = ws.panes.get_mut(pane) {
+                                content.tabs.push(tab);
+                                content.active_tab = 0;
                             }
                         }
                     }
@@ -265,21 +274,49 @@ impl App {
             Message::TabClose(pane, idx) => {
                 if let Some(ws) = self.workspaces.get_mut(self.active_workspace)
                 {
-                    if let Some(content) = ws.panes.get_mut(pane) {
-                        if idx < content.tabs.len() {
+                    let pane_count = ws.panes.len();
+                    let should_remove_tab = ws
+                        .panes
+                        .get(pane)
+                        .map(|c| idx < c.tabs.len())
+                        .unwrap_or(false);
+
+                    if should_remove_tab {
+                        let became_empty = {
+                            let content = ws.panes.get_mut(pane).unwrap();
                             content.tabs.remove(idx);
                             if content.tabs.is_empty() {
-                                if ws.panes.len() > 1 {
-                                    if let Some((_content, sibling)) =
-                                        ws.panes.close(pane)
-                                    {
-                                        if ws.focus == pane {
-                                            ws.focus = sibling;
-                                        }
+                                true
+                            } else {
+                                if content.active_tab >= content.tabs.len() {
+                                    content.active_tab =
+                                        content.tabs.len() - 1;
+                                }
+                                false
+                            }
+                        };
+
+                        if became_empty {
+                            if pane_count > 1 {
+                                if let Some((_content, sibling)) =
+                                    ws.panes.close(pane)
+                                {
+                                    if ws.focus == pane {
+                                        ws.focus = sibling;
                                     }
                                 }
-                            } else if content.active_tab >= content.tabs.len() {
-                                content.active_tab = content.tabs.len() - 1;
+                            } else if let Some(tab) =
+                                Workspace::create_tab(
+                                    &ws.cwd,
+                                    &self.config,
+                                )
+                            {
+                                if let Some(content) =
+                                    ws.panes.get_mut(pane)
+                                {
+                                    content.tabs.push(tab);
+                                    content.active_tab = 0;
+                                }
                             }
                         }
                     }
@@ -356,7 +393,7 @@ impl App {
                         text("No active tab").into()
                     };
 
-                let tab_bar: Element<'_, Message> = if content.tabs.len() > 1 {
+                let tab_bar: Element<'_, Message> = {
                     let tabs = content.tabs.iter().enumerate().map(|(i, tab)| {
                         let is_active = i == content.active_tab;
                         let label = text(&tab.name).size(font_size * 0.8);
@@ -382,8 +419,6 @@ impl App {
                     container(row(tab_items).spacing(2))
                         .padding([2, 4])
                         .into()
-                } else {
-                    container(row![]).height(0).into()
                 };
 
                 let content_view = column![tab_bar, body];
