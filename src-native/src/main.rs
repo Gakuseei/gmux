@@ -833,9 +833,7 @@ impl App {
         action: shortcuts::Action,
     ) -> iced::Task<Message> {
         match action {
-            shortcuts::Action::Copy => {}
-            shortcuts::Action::Paste => {}
-            shortcuts::Action::TabNew => return self.update(Message::TabNew),
+            shortcuts::Action::TabNew => self.update(Message::TabNew),
             shortcuts::Action::TabClose => {
                 if let Some(ws) = self.workspaces.get(self.active_workspace) {
                     let pane = ws.focus;
@@ -844,61 +842,56 @@ impl App {
                         return self.update(Message::TabClose(pane, idx));
                     }
                 }
+                iced::Task::none()
             }
-            shortcuts::Action::TabNext => {
-                return self.update(Message::TabNext)
-            }
-            shortcuts::Action::TabPrev => {
-                return self.update(Message::TabPrev)
-            }
+            shortcuts::Action::TabNext => self.update(Message::TabNext),
+            shortcuts::Action::TabPrev => self.update(Message::TabPrev),
             shortcuts::Action::TabJump(idx) => {
                 if let Some(ws) = self.workspaces.get(self.active_workspace) {
                     let pane = ws.focus;
                     return self
                         .update(Message::TabActivate(pane, idx));
                 }
+                iced::Task::none()
             }
-            shortcuts::Action::PaneSplitHorizontal => {
-                return self
-                    .update(Message::PaneSplit(pane_grid::Axis::Horizontal))
-            }
-            shortcuts::Action::PaneSplitVertical => {
-                return self
-                    .update(Message::PaneSplit(pane_grid::Axis::Vertical))
-            }
+            shortcuts::Action::PaneSplitHorizontal => self
+                .update(Message::PaneSplit(pane_grid::Axis::Horizontal)),
+            shortcuts::Action::PaneSplitVertical => self
+                .update(Message::PaneSplit(pane_grid::Axis::Vertical)),
             shortcuts::Action::PaneClose => {
-                return self.update(Message::PaneClose)
+                self.update(Message::PaneClose)
             }
             shortcuts::Action::PaneFocusUp => {
-                return self.update(Message::PaneFocusUp)
+                self.update(Message::PaneFocusUp)
             }
             shortcuts::Action::PaneFocusDown => {
-                return self.update(Message::PaneFocusDown)
+                self.update(Message::PaneFocusDown)
             }
             shortcuts::Action::PaneFocusLeft => {
-                return self.update(Message::PaneFocusLeft)
+                self.update(Message::PaneFocusLeft)
             }
             shortcuts::Action::PaneFocusRight => {
-                return self.update(Message::PaneFocusRight)
+                self.update(Message::PaneFocusRight)
             }
             shortcuts::Action::PaneMaximize => {
-                return self.update(Message::PaneToggleMaximized)
+                self.update(Message::PaneToggleMaximized)
             }
             shortcuts::Action::WorkspaceNew => {
-                return self.update(Message::WorkspaceNew)
+                self.update(Message::WorkspaceNew)
             }
-            shortcuts::Action::Find => {}
-            shortcuts::Action::FontSizeIncrease => {}
-            shortcuts::Action::FontSizeDecrease => {}
-            shortcuts::Action::FontSizeReset => {}
             shortcuts::Action::SidebarToggle => {
-                return self.update(Message::SidebarToggle)
+                self.update(Message::SidebarToggle)
             }
             shortcuts::Action::SettingsToggle => {
-                return self.update(Message::SettingsToggle)
+                self.update(Message::SettingsToggle)
             }
+            shortcuts::Action::Copy
+            | shortcuts::Action::Paste
+            | shortcuts::Action::Find
+            | shortcuts::Action::FontSizeIncrease
+            | shortcuts::Action::FontSizeDecrease
+            | shortcuts::Action::FontSizeReset => iced::Task::none(),
         }
-        iced::Task::none()
     }
 
     fn move_focus(&mut self, direction: pane_grid::Direction) {

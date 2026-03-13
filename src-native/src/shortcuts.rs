@@ -88,28 +88,28 @@ pub fn default_keybindings() -> HashMap<KeyBind, Action> {
             modifiers: ctrl_shift,
             key: Key::Named(Named::ArrowUp),
         },
-        Action::PaneSplitVertical,
+        Action::PaneSplitHorizontal,
     );
     map.insert(
         KeyBind {
             modifiers: ctrl_shift,
             key: Key::Named(Named::ArrowDown),
         },
-        Action::PaneSplitVertical,
+        Action::PaneSplitHorizontal,
     );
     map.insert(
         KeyBind {
             modifiers: ctrl_shift,
             key: Key::Named(Named::ArrowLeft),
         },
-        Action::PaneSplitHorizontal,
+        Action::PaneSplitVertical,
     );
     map.insert(
         KeyBind {
             modifiers: ctrl_shift,
             key: Key::Named(Named::ArrowRight),
         },
-        Action::PaneSplitHorizontal,
+        Action::PaneSplitVertical,
     );
     map.insert(
         KeyBind {
