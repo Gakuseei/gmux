@@ -76,6 +76,38 @@ impl Workspace {
         })
     }
 
+    pub fn create_tab_with_command(
+        cwd: &PathBuf,
+        config: &Config,
+        command: &str,
+        name: &str,
+        bypass: bool,
+    ) -> Option<TabEntry> {
+        let cwd_str = cwd.to_string_lossy();
+        let scrollback = config.terminal.scrollback_lines as usize;
+        let font_size = config.appearance.font_size as f32;
+        let cell_width = font_size * 0.6;
+        let cell_height = font_size * 1.2;
+
+        let terminal = Terminal::new(
+            command,
+            &cwd_str,
+            80,
+            24,
+            scrollback,
+            cell_width,
+            cell_height,
+        )
+        .ok()?;
+
+        Some(TabEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            name: name.to_string(),
+            terminal,
+            bypass,
+        })
+    }
+
     pub fn active_pane(&self) -> Option<&PaneContent> {
         self.panes.get(self.focus)
     }

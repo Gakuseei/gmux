@@ -42,6 +42,83 @@ enum InsightsTab {
     Info,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum LayoutTemplate {
+    Single,
+    SplitHorizontal,
+    SplitVertical,
+    Grid4,
+    ThreeColumns,
+    Grid6,
+}
+
+impl LayoutTemplate {
+    fn pane_count(&self) -> usize {
+        match self {
+            Self::Single => 1,
+            Self::SplitHorizontal | Self::SplitVertical => 2,
+            Self::ThreeColumns => 3,
+            Self::Grid4 => 4,
+            Self::Grid6 => 6,
+        }
+    }
+
+    fn label(&self) -> &str {
+        match self {
+            Self::Single => "[     ]",
+            Self::SplitHorizontal => "[ -- ]",
+            Self::SplitVertical => "[ | ]",
+            Self::Grid4 => "[ + ]",
+            Self::ThreeColumns => "[ ||| ]",
+            Self::Grid6 => "[ ++ ]",
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum AgentType {
+    Shell,
+    Claude,
+    Codex,
+    Gemini,
+}
+
+impl AgentType {
+    fn label(&self) -> &str {
+        match self {
+            Self::Shell => "Shell",
+            Self::Claude => "Claude",
+            Self::Codex => "Codex",
+            Self::Gemini => "Gemini",
+        }
+    }
+
+    fn command(&self, config: &Config, bypass: bool) -> String {
+        match self {
+            Self::Shell => config.terminal.default_shell.clone(),
+            Self::Claude => {
+                if bypass {
+                    String::from("claude --dangerously-skip-permissions")
+                } else {
+                    String::from("claude")
+                }
+            }
+            Self::Codex => {
+                if bypass {
+                    String::from("codex --dangerously-bypass-approvals-and-sandbox")
+                } else {
+                    String::from("codex")
+                }
+            }
+            Self::Gemini => String::from("gemini"),
+        }
+    }
+
+    fn supports_bypass(&self) -> bool {
+        matches!(self, Self::Claude | Self::Codex)
+    }
+}
+
 fn main() -> iced::Result {
     if cfg!(target_os = "linux") && std::env::var("WGPU_BACKEND").is_err() {
         std::env::set_var("WGPU_BACKEND", "gl");
@@ -80,6 +157,11 @@ struct App {
     git_branches: Vec<git::BranchInfo>,
     git_files: Vec<git::FileStatus>,
     git_diff: Option<git::FileDiff>,
+    workspace_modal_open: bool,
+    modal_name: String,
+    modal_path: String,
+    modal_layout: LayoutTemplate,
+    modal_agents: Vec<(AgentType, bool)>,
 }
 
 #[derive(Debug, Clone)]
@@ -121,6 +203,17 @@ enum Message {
     GitSelectFile(String),
     GitBackFromDiff,
     GitSwitchBranch(String),
+    WorkspaceModalOpen,
+    WorkspaceModalClose,
+    WorkspaceModalNameChange(String),
+    WorkspaceModalPathChange(String),
+    WorkspaceModalBrowse,
+    WorkspaceModalPathSelected(Option<PathBuf>),
+    WorkspaceModalLayoutChange(LayoutTemplate),
+    WorkspaceModalAgentAdd(AgentType),
+    WorkspaceModalAgentRemove(usize),
+    WorkspaceModalAgentBypass(usize, bool),
+    WorkspaceModalCreate,
 }
 
 impl App {
@@ -157,6 +250,11 @@ impl App {
             git_branches: Vec::new(),
             git_files: Vec::new(),
             git_diff: None,
+            workspace_modal_open: false,
+            modal_name: String::new(),
+            modal_path: String::new(),
+            modal_layout: LayoutTemplate::Single,
+            modal_agents: vec![(AgentType::Shell, false)],
         }
     }
 
@@ -491,14 +589,7 @@ impl App {
                 }
             }
             Message::WorkspaceNew => {
-                let home =
-                    dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
-                let name =
-                    format!("Workspace {}", self.workspaces.len() + 1);
-                if let Some(ws) = Workspace::new(&name, &home, &self.config) {
-                    self.workspaces.push(ws);
-                    self.active_workspace = self.workspaces.len() - 1;
-                }
+                return self.update(Message::WorkspaceModalOpen);
             }
             Message::ViewSwitch(view) => {
                 self.active_view = view.clone();
@@ -584,6 +675,179 @@ impl App {
                         self.git_files = git::get_git_status(cwd).unwrap_or_default();
                         self.git_diff = None;
                     }
+                }
+            }
+            Message::WorkspaceModalOpen => {
+                self.workspace_modal_open = true;
+                let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+                self.modal_name = format!("Workspace {}", self.workspaces.len() + 1);
+                self.modal_path = home.to_string_lossy().to_string();
+                self.modal_layout = LayoutTemplate::Single;
+                self.modal_agents = vec![(AgentType::Shell, false)];
+            }
+            Message::WorkspaceModalClose => {
+                self.workspace_modal_open = false;
+            }
+            Message::WorkspaceModalNameChange(name) => {
+                self.modal_name = name;
+            }
+            Message::WorkspaceModalPathChange(path) => {
+                self.modal_path = path;
+            }
+            Message::WorkspaceModalBrowse => {
+                return iced::Task::perform(
+                    async {
+                        rfd::AsyncFileDialog::new()
+                            .set_title("Select Workspace Directory")
+                            .pick_folder()
+                            .await
+                            .map(|h| h.path().to_path_buf())
+                    },
+                    Message::WorkspaceModalPathSelected,
+                );
+            }
+            Message::WorkspaceModalPathSelected(path) => {
+                if let Some(p) = path {
+                    self.modal_path = p.to_string_lossy().to_string();
+                }
+            }
+            Message::WorkspaceModalLayoutChange(layout) => {
+                self.modal_layout = layout;
+            }
+            Message::WorkspaceModalAgentAdd(agent_type) => {
+                self.modal_agents.push((agent_type, false));
+            }
+            Message::WorkspaceModalAgentRemove(idx) => {
+                if idx < self.modal_agents.len() {
+                    self.modal_agents.remove(idx);
+                }
+            }
+            Message::WorkspaceModalAgentBypass(idx, val) => {
+                if let Some(agent) = self.modal_agents.get_mut(idx) {
+                    agent.1 = val;
+                }
+            }
+            Message::WorkspaceModalCreate => {
+                let cwd = PathBuf::from(&self.modal_path);
+                let pane_count = self.modal_layout.pane_count();
+
+                let first_agent = self.modal_agents.first().cloned().unwrap_or((AgentType::Shell, false));
+                let first_cmd = first_agent.0.command(&self.config, first_agent.1);
+                let first_tab = Workspace::create_tab_with_command(
+                    &cwd,
+                    &self.config,
+                    &first_cmd,
+                    first_agent.0.label(),
+                    first_agent.1,
+                );
+
+                if let Some(tab) = first_tab {
+                    let content = PaneContent {
+                        tabs: vec![tab],
+                        active_tab: 0,
+                    };
+                    let (mut panes, first_pane) = pane_grid::State::new(content);
+
+                    let mut all_panes = vec![first_pane];
+
+                    match self.modal_layout {
+                        LayoutTemplate::Single => {}
+                        LayoutTemplate::SplitHorizontal => {
+                            let agent = self.modal_agents.get(1).cloned().unwrap_or((AgentType::Shell, false));
+                            let cmd = agent.0.command(&self.config, agent.1);
+                            if let Some(t) = Workspace::create_tab_with_command(&cwd, &self.config, &cmd, agent.0.label(), agent.1) {
+                                let c = PaneContent { tabs: vec![t], active_tab: 0 };
+                                if let Some((p, _)) = panes.split(pane_grid::Axis::Horizontal, first_pane, c) {
+                                    all_panes.push(p);
+                                }
+                            }
+                        }
+                        LayoutTemplate::SplitVertical => {
+                            let agent = self.modal_agents.get(1).cloned().unwrap_or((AgentType::Shell, false));
+                            let cmd = agent.0.command(&self.config, agent.1);
+                            if let Some(t) = Workspace::create_tab_with_command(&cwd, &self.config, &cmd, agent.0.label(), agent.1) {
+                                let c = PaneContent { tabs: vec![t], active_tab: 0 };
+                                if let Some((p, _)) = panes.split(pane_grid::Axis::Vertical, first_pane, c) {
+                                    all_panes.push(p);
+                                }
+                            }
+                        }
+                        LayoutTemplate::Grid4 => {
+                            for i in 0..3 {
+                                let agent = self.modal_agents.get(i + 1).cloned().unwrap_or((AgentType::Shell, false));
+                                let cmd = agent.0.command(&self.config, agent.1);
+                                if let Some(t) = Workspace::create_tab_with_command(&cwd, &self.config, &cmd, agent.0.label(), agent.1) {
+                                    let c = PaneContent { tabs: vec![t], active_tab: 0 };
+                                    let axis = if i == 0 {
+                                        pane_grid::Axis::Horizontal
+                                    } else if i == 1 {
+                                        pane_grid::Axis::Vertical
+                                    } else {
+                                        pane_grid::Axis::Vertical
+                                    };
+                                    let parent = if i < 2 { first_pane } else { all_panes[1] };
+                                    if let Some((p, _)) = panes.split(axis, parent, c) {
+                                        all_panes.push(p);
+                                    }
+                                }
+                            }
+                        }
+                        LayoutTemplate::ThreeColumns => {
+                            for i in 0..2 {
+                                let agent = self.modal_agents.get(i + 1).cloned().unwrap_or((AgentType::Shell, false));
+                                let cmd = agent.0.command(&self.config, agent.1);
+                                if let Some(t) = Workspace::create_tab_with_command(&cwd, &self.config, &cmd, agent.0.label(), agent.1) {
+                                    let c = PaneContent { tabs: vec![t], active_tab: 0 };
+                                    let parent = if i == 0 { first_pane } else { all_panes[1] };
+                                    if let Some((p, _)) = panes.split(pane_grid::Axis::Vertical, parent, c) {
+                                        all_panes.push(p);
+                                    }
+                                }
+                            }
+                        }
+                        LayoutTemplate::Grid6 => {
+                            for i in 0..5 {
+                                let agent = self.modal_agents.get(i + 1).cloned().unwrap_or((AgentType::Shell, false));
+                                let cmd = agent.0.command(&self.config, agent.1);
+                                if let Some(t) = Workspace::create_tab_with_command(&cwd, &self.config, &cmd, agent.0.label(), agent.1) {
+                                    let c = PaneContent { tabs: vec![t], active_tab: 0 };
+                                    let (axis, parent) = match i {
+                                        0 => (pane_grid::Axis::Horizontal, first_pane),
+                                        1 => (pane_grid::Axis::Vertical, first_pane),
+                                        2 => (pane_grid::Axis::Vertical, all_panes[1]),
+                                        3 => (pane_grid::Axis::Vertical, all_panes.get(2).copied().unwrap_or(first_pane)),
+                                        _ => (pane_grid::Axis::Vertical, all_panes.get(3).copied().unwrap_or(first_pane)),
+                                    };
+                                    if let Some((p, _)) = panes.split(axis, parent, c) {
+                                        all_panes.push(p);
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    let remaining_agents: Vec<(AgentType, bool)> = self.modal_agents.iter().skip(pane_count).cloned().collect();
+                    for agent in remaining_agents {
+                        let cmd = agent.0.command(&self.config, agent.1);
+                        if let Some(t) = Workspace::create_tab_with_command(&cwd, &self.config, &cmd, agent.0.label(), agent.1) {
+                            if let Some(content) = panes.get_mut(first_pane) {
+                                content.tabs.push(t);
+                            }
+                        }
+                    }
+
+                    let ws = Workspace {
+                        id: uuid::Uuid::new_v4().to_string(),
+                        name: self.modal_name.clone(),
+                        folder: Some(self.modal_path.clone()),
+                        panes,
+                        focus: first_pane,
+                        cwd,
+                    };
+
+                    self.workspaces.push(ws);
+                    self.active_workspace = self.workspaces.len() - 1;
+                    self.workspace_modal_open = false;
                 }
             }
         }
@@ -1755,6 +2019,276 @@ impl App {
             .into()
     }
 
+    fn workspace_modal_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+
+        let surface_bg = ui.bg_surface.to_iced();
+        let primary_bg = ui.bg_primary.to_iced();
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let accent = ui.accent.to_iced();
+        let border_color = ui.border.to_iced();
+        let hover_color = ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+
+        let close_btn = button(
+            text("\u{00D7}").size(font_size * 1.2).color(text_secondary),
+        )
+        .on_press(Message::WorkspaceModalClose)
+        .padding([4, 8])
+        .style(Self::ghost_button_style(text_secondary, hover_color));
+
+        let header = row![
+            text("New Workspace").size(font_size * 1.4).color(text_primary),
+            Space::new().width(Length::Fill),
+            close_btn,
+        ]
+        .align_y(iced::Alignment::Center);
+
+        let name_label = text("Name").size(font_size * 0.9).color(text_secondary);
+        let name_input = text_input("Workspace name", &self.modal_name)
+            .on_input(Message::WorkspaceModalNameChange)
+            .size(font_size)
+            .width(Length::Fill)
+            .style(move |_theme: &Theme, status| {
+                let border_c = match status {
+                    text_input::Status::Focused { .. } => accent,
+                    _ => primary_bg,
+                };
+                text_input::Style {
+                    background: Background::Color(primary_bg),
+                    border: Border {
+                        width: 1.0,
+                        color: border_c,
+                        radius: 4.0.into(),
+                    },
+                    icon: text_primary,
+                    placeholder: text_secondary,
+                    value: text_primary,
+                    selection: accent,
+                }
+            });
+        let name_row = column![name_label, name_input].spacing(4);
+
+        let path_label = text("Directory").size(font_size * 0.9).color(text_secondary);
+        let path_input = text_input("Working directory", &self.modal_path)
+            .on_input(Message::WorkspaceModalPathChange)
+            .size(font_size)
+            .width(Length::Fill)
+            .style(move |_theme: &Theme, status| {
+                let border_c = match status {
+                    text_input::Status::Focused { .. } => accent,
+                    _ => primary_bg,
+                };
+                text_input::Style {
+                    background: Background::Color(primary_bg),
+                    border: Border {
+                        width: 1.0,
+                        color: border_c,
+                        radius: 4.0.into(),
+                    },
+                    icon: text_primary,
+                    placeholder: text_secondary,
+                    value: text_primary,
+                    selection: accent,
+                }
+            });
+        let browse_btn = button(
+            text("Browse").size(font_size * 0.85).color(text_primary),
+        )
+        .on_press(Message::WorkspaceModalBrowse)
+        .padding([6, 12])
+        .style(Self::ghost_button_style(text_primary, hover_color));
+        let path_input_row = row![path_input, browse_btn].spacing(8).align_y(iced::Alignment::Center);
+        let path_row = column![path_label, path_input_row].spacing(4);
+
+        let layout_label = text("Layout").size(font_size * 0.9).color(text_secondary);
+        let layout_buttons: Vec<Element<'_, Message>> = vec![
+            LayoutTemplate::Single,
+            LayoutTemplate::SplitHorizontal,
+            LayoutTemplate::SplitVertical,
+            LayoutTemplate::Grid4,
+            LayoutTemplate::ThreeColumns,
+            LayoutTemplate::Grid6,
+        ]
+        .into_iter()
+        .map(|tmpl| {
+            let is_active = self.modal_layout == tmpl;
+            let label_color = if is_active { accent } else { text_secondary };
+            let bg_color = if is_active {
+                ui.accent.to_iced_alpha(ui.active_highlight_alpha)
+            } else {
+                iced::Color::TRANSPARENT
+            };
+            let active_border = if is_active { accent } else { border_color };
+            let tmpl_label = String::from(tmpl.label());
+            button(
+                text(tmpl_label)
+                    .size(font_size * 0.75)
+                    .color(label_color)
+                    .font(Font::MONOSPACE),
+            )
+            .on_press(Message::WorkspaceModalLayoutChange(tmpl))
+            .padding([6, 10])
+            .style(move |_theme: &Theme, status| {
+                let bg = match status {
+                    button::Status::Hovered => hover_color,
+                    _ => bg_color,
+                };
+                button::Style {
+                    background: Some(Background::Color(bg)),
+                    text_color: label_color,
+                    border: Border {
+                        width: 1.0,
+                        color: active_border,
+                        radius: 4.0.into(),
+                    },
+                    ..button::Style::default()
+                }
+            })
+            .into()
+        })
+        .collect();
+        let layout_row = column![layout_label, row(layout_buttons).spacing(6)].spacing(4);
+
+        let agents_label = text("Agents").size(font_size * 0.9).color(text_secondary);
+        let agent_entries: Vec<Element<'_, Message>> = self
+            .modal_agents
+            .iter()
+            .enumerate()
+            .map(|(idx, (agent_type, bypass))| {
+                let type_label = text(agent_type.label())
+                    .size(font_size * 0.85)
+                    .color(text_primary);
+
+                let bypass_widget: Element<'_, Message> = if agent_type.supports_bypass() {
+                    let bypass_val = *bypass;
+                    let bypass_label = if bypass_val { "\u{2611}" } else { "\u{2610}" };
+                    let bypass_btn = button(
+                        text(format!("{} Bypass", bypass_label))
+                            .size(font_size * 0.75)
+                            .color(text_secondary),
+                    )
+                    .on_press(Message::WorkspaceModalAgentBypass(idx, !bypass_val))
+                    .padding([2, 6])
+                    .style(Self::ghost_button_style(text_secondary, hover_color));
+                    bypass_btn.into()
+                } else {
+                    Space::new().width(0).into()
+                };
+
+                let remove_btn = button(
+                    text("\u{00D7}").size(font_size * 0.85).color(text_secondary),
+                )
+                .on_press(Message::WorkspaceModalAgentRemove(idx))
+                .padding([2, 6])
+                .style(Self::ghost_button_style(text_secondary, hover_color));
+
+                container(
+                    row![
+                        type_label,
+                        Space::new().width(Length::Fill),
+                        bypass_widget,
+                        remove_btn,
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center),
+                )
+                .padding([4, 8])
+                .width(Length::Fill)
+                .style(move |_theme: &Theme| container::Style {
+                    background: Some(Background::Color(primary_bg)),
+                    border: Border {
+                        width: 1.0,
+                        color: border_color,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
+                })
+                .into()
+            })
+            .collect();
+
+        let add_agent_types = [
+            (AgentType::Shell, "+ Shell"),
+            (AgentType::Claude, "+ Claude"),
+            (AgentType::Codex, "+ Codex"),
+            (AgentType::Gemini, "+ Gemini"),
+        ];
+        let add_buttons: Vec<Element<'_, Message>> = add_agent_types
+            .iter()
+            .map(|(agent_type, label)| {
+                let at = agent_type.clone();
+                button(
+                    text(*label).size(font_size * 0.8).color(text_secondary),
+                )
+                .on_press(Message::WorkspaceModalAgentAdd(at))
+                .padding([4, 10])
+                .style(Self::ghost_button_style(text_secondary, hover_color))
+                .into()
+            })
+            .collect();
+
+        let agents_section = column![
+            agents_label,
+            column(agent_entries).spacing(4),
+            row(add_buttons).spacing(4),
+        ]
+        .spacing(6);
+
+        let create_btn = button(
+            text("Create Workspace")
+                .size(font_size)
+                .color(text_primary),
+        )
+        .on_press(Message::WorkspaceModalCreate)
+        .padding([10, 24])
+        .width(Length::Fill)
+        .style(move |_theme: &Theme, status| {
+            let bg = match status {
+                button::Status::Hovered | button::Status::Pressed => accent,
+                _ => ui.accent.to_iced_alpha(0.8),
+            };
+            button::Style {
+                background: Some(Background::Color(bg)),
+                text_color: text_primary,
+                border: Border {
+                    width: 0.0,
+                    color: iced::Color::TRANSPARENT,
+                    radius: 6.0.into(),
+                },
+                ..button::Style::default()
+            }
+        });
+
+        let card_content = column![
+            header,
+            name_row,
+            path_row,
+            layout_row,
+            agents_section,
+            create_btn,
+        ]
+        .spacing(16)
+        .padding(24)
+        .max_width(550);
+
+        let card = container(card_content)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(surface_bg)),
+                border: Border {
+                    width: 1.0,
+                    color: border_color,
+                    radius: 8.0.into(),
+                },
+                ..Default::default()
+            });
+
+        container(card)
+            .center(Length::Fill)
+            .into()
+    }
+
     fn pane_grid_view(&self) -> Element<'_, Message> {
         let Some(workspace) = self.workspaces.get(self.active_workspace) else {
             return container(text("No workspace"))
@@ -1905,7 +2439,22 @@ impl App {
             }
         };
 
-        column![top_bar, main_content].into()
+        let main_layout: Element<'_, Message> = column![top_bar, main_content].into();
+
+        if self.workspace_modal_open {
+            let modal = self.workspace_modal_view();
+            let overlay_bg = iced::Color::from_rgba(0.0, 0.0, 0.0, 0.5);
+            let overlay: Element<'_, Message> = container(modal)
+                .center(Length::Fill)
+                .style(move |_theme: &Theme| container::Style {
+                    background: Some(Background::Color(overlay_bg)),
+                    ..Default::default()
+                })
+                .into();
+            return iced::widget::Stack::with_children(vec![main_layout, overlay]).into();
+        }
+
+        main_layout
     }
 
     fn handle_shortcut(
