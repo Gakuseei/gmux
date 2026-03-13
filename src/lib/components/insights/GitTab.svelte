@@ -5,45 +5,36 @@
 
 	let errorMessage = $state<string | null>(null);
 
-	async function handleStageFile(path: string) {
+	async function withError(label: string, fn: () => Promise<void>) {
 		errorMessage = null;
 		try {
-			await gitStore.stageFile(path);
+			await fn();
 		} catch (e) {
-			errorMessage = `Failed to stage ${path}: ${String(e)}`;
+			errorMessage = `${label}: ${String(e)}`;
 		}
 	}
 
-	async function handleUnstageFile(path: string) {
-		errorMessage = null;
-		try {
-			await gitStore.unstageFile(path);
-		} catch (e) {
-			errorMessage = `Failed to unstage ${path}: ${String(e)}`;
-		}
+	function handleStageFile(path: string) {
+		withError(`Failed to stage ${path}`, () => gitStore.stageFile(path));
+	}
+
+	function handleUnstageFile(path: string) {
+		withError(`Failed to unstage ${path}`, () => gitStore.unstageFile(path));
 	}
 
 	async function handleRevertFile(path: string) {
-		errorMessage = null;
 		const confirmed = await confirm(`Revert ${path}? This cannot be undone.`, {
 			title: 'Confirm Revert',
 			kind: 'warning'
 		});
 		if (!confirmed) return;
-		try {
-			await gitStore.revertFile(path);
-		} catch (e) {
-			errorMessage = `Failed to revert ${path}: ${String(e)}`;
-		}
+		withError(`Failed to revert ${path}`, () => gitStore.revertFile(path));
 	}
 
-	async function handleStageAll() {
-		errorMessage = null;
-		try {
+	function handleStageAll() {
+		withError('Failed to stage all', async () => {
 			for (const f of gitStore.files) await gitStore.stageFile(f.path);
-		} catch (e) {
-			errorMessage = `Failed to stage all: ${String(e)}`;
-		}
+		});
 	}
 
 	function statusIcon(status: string): string {

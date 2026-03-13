@@ -72,12 +72,7 @@
 	}
 
 	function handleItemKeydown(e: KeyboardEvent) {
-		if (e.key === 'F10' && e.shiftKey) {
-			e.preventDefault();
-			const target = e.currentTarget as HTMLElement;
-			const rect = target.getBoundingClientRect();
-			contextMenu = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-		} else if (e.key === 'ContextMenu') {
+		if ((e.key === 'F10' && e.shiftKey) || e.key === 'ContextMenu') {
 			e.preventDefault();
 			const target = e.currentTarget as HTMLElement;
 			const rect = target.getBoundingClientRect();

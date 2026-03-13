@@ -78,6 +78,13 @@
 		window.addEventListener('mouseup', onMouseUp);
 	}
 
+	function adjustRatio(delta: number) {
+		const newRatio = Math.min(RATIO_MAX, Math.max(RATIO_MIN, ratio + delta));
+		ratioOffset = newRatio - initialRatio;
+		node.ratio = newRatio;
+		if (onRatioChange) onRatioChange(node, newRatio);
+	}
+
 	function onDividerKeydown(e: KeyboardEvent) {
 		const isHorizontal = node.direction === 'horizontal';
 		const increaseKey = isHorizontal ? 'ArrowRight' : 'ArrowDown';
@@ -85,16 +92,10 @@
 
 		if (e.key === increaseKey) {
 			e.preventDefault();
-			const newRatio = Math.min(RATIO_MAX, ratio + RATIO_KEYBOARD_STEP);
-			ratioOffset = newRatio - initialRatio;
-			node.ratio = newRatio;
-			if (onRatioChange) onRatioChange(node, newRatio);
+			adjustRatio(RATIO_KEYBOARD_STEP);
 		} else if (e.key === decreaseKey) {
 			e.preventDefault();
-			const newRatio = Math.max(RATIO_MIN, ratio - RATIO_KEYBOARD_STEP);
-			ratioOffset = newRatio - initialRatio;
-			node.ratio = newRatio;
-			if (onRatioChange) onRatioChange(node, newRatio);
+			adjustRatio(-RATIO_KEYBOARD_STEP);
 		}
 	}
 </script>

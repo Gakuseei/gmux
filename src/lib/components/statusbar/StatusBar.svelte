@@ -1,16 +1,6 @@
 <script lang="ts">
 	import { statusStore } from '$lib/stores/status.svelte';
-
-	function formatTokens(n: number): string {
-		if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
-		if (n >= 1_000) return Math.round(n / 1_000) + 'k';
-		return String(n);
-	}
-
-	function formatK(n: number): string {
-		if (n >= 1_000) return Math.round(n / 1_000) + 'k';
-		return String(n);
-	}
+	import { formatTokens } from '$lib/utils/format';
 </script>
 
 <footer class="statusbar">
@@ -22,7 +12,7 @@
 	<span class="sep">&#183;</span>
 	<span class="item">&#8593;{formatTokens(statusStore.inputTokens)} &#8595;{formatTokens(statusStore.outputTokens)}</span>
 	<span class="sep">&#183;</span>
-	<span class="item">ctx {statusStore.contextPercent}% ({formatK(statusStore.contextUsed)}/{formatK(statusStore.contextTotal)})</span>
+	<span class="item">ctx {statusStore.contextPercent}% ({formatTokens(statusStore.contextUsed)}/{formatTokens(statusStore.contextTotal)})</span>
 </footer>
 
 <style>

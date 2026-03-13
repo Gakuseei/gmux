@@ -9,7 +9,7 @@ interface WindowState {
 	y: number;
 }
 
-interface PathEntry {
+export interface PathEntry {
 	path: string;
 	frequency: number;
 	lastUsed: string;

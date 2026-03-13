@@ -108,7 +108,10 @@ class AppStore {
 
 	addSessionToWorkspace(workspaceId: string, session: TerminalSession) {
 		const ws = this.workspaces.find((w) => w.id === workspaceId);
-		if (ws) ws.sessions.push(session);
+		if (ws) {
+			ws.sessions.push(session);
+			this.bump();
+		}
 	}
 
 	updateSessionStatus(sessionId: string, status: TerminalSession['status']) {
@@ -116,6 +119,7 @@ class AppStore {
 			const s = ws.sessions.find((s) => s.id === sessionId);
 			if (s) {
 				s.status = status;
+				this.bump();
 				break;
 			}
 		}
@@ -126,6 +130,7 @@ class AppStore {
 			const s = ws.sessions.find((s) => s.id === sessionId);
 			if (s) {
 				s.notificationCount++;
+				this.bump();
 				break;
 			}
 		}
@@ -139,6 +144,7 @@ class AppStore {
 				if (s.status === 'needs-input') {
 					s.status = 'running';
 				}
+				this.bump();
 				break;
 			}
 		}

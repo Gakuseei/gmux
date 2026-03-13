@@ -2,6 +2,9 @@
 	import { onMount } from 'svelte';
 	import { usageStore } from '$lib/stores/usage.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
+	import { formatTokens as _fmt } from '$lib/utils/format';
+
+	const formatTokens = (n: number) => _fmt(n, 'detailed');
 
 	let rates = $derived(settingsStore.costRates.claude);
 	let fiveHourLimit = $derived(settingsStore.rateLimits.claude.fiveHourLimit);
@@ -15,34 +18,25 @@
 		return c < 0.01 && c > 0 ? '<$0.01' : '$' + c.toFixed(2);
 	}
 
-	function formatTokens(n: number): string {
-		if (n >= 1_000_000) return (n / 1_000_000).toFixed(2) + 'M';
-		if (n >= 1_000) return (n / 1_000).toFixed(1) + 'k';
-		return String(n);
-	}
-
 	function totalCost(input: number, output: number, cacheRead: number, cacheWrite: number): number {
 		return cost(input, rates.input) + cost(output, rates.output) + cost(cacheRead, rates.cacheRead) + cost(cacheWrite, rates.cacheWrite);
 	}
 
 	const FIVE_HOURS_MS = 5 * 60 * 60 * 1000;
 
-	let fiveHourUsage = $derived.by(() => {
-		if (!usageStore.data) return 0;
+	let fiveHourSessions = $derived.by(() => {
+		if (!usageStore.data) return [];
 		const cutoff = Date.now() - FIVE_HOURS_MS;
-		return usageStore.data.sessions
-			.filter((s) => new Date(s.timestamp).getTime() > cutoff)
-			.reduce((acc, s) => acc + s.input_tokens + s.output_tokens, 0);
+		return usageStore.data.sessions.filter((s) => new Date(s.timestamp).getTime() > cutoff);
 	});
 
+	let fiveHourUsage = $derived(
+		fiveHourSessions.reduce((acc, s) => acc + s.input_tokens + s.output_tokens, 0)
+	);
+
 	let fiveHourResetMinutes = $derived.by(() => {
-		if (!usageStore.data || usageStore.data.sessions.length === 0) return 0;
-		const cutoff = Date.now() - FIVE_HOURS_MS;
-		const relevantSessions = usageStore.data.sessions.filter(
-			(s) => new Date(s.timestamp).getTime() > cutoff
-		);
-		if (relevantSessions.length === 0) return 0;
-		const oldest = Math.min(...relevantSessions.map((s) => new Date(s.timestamp).getTime()));
+		if (fiveHourSessions.length === 0) return 0;
+		const oldest = Math.min(...fiveHourSessions.map((s) => new Date(s.timestamp).getTime()));
 		const resetAt = oldest + FIVE_HOURS_MS;
 		return Math.max(0, Math.ceil((resetAt - Date.now()) / 60_000));
 	});

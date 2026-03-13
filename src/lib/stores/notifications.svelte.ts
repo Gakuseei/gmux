@@ -24,6 +24,7 @@ class NotificationStore {
 		gain.connect(ctx.destination);
 		oscillator.start(ctx.currentTime);
 		oscillator.stop(ctx.currentTime + BEEP_DURATION);
+		oscillator.onended = () => { gain.disconnect(); oscillator.disconnect(); };
 	}
 
 	async notify(sessionId: string, patternName: string) {

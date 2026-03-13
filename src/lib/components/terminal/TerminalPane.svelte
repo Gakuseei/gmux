@@ -29,7 +29,7 @@
 		onData?: (data: string) => void;
 	} = $props();
 
-	function buildCustomPatterns(): Array<{ name: string; regex: RegExp }> {
+	let compiledCustomPatterns = $derived.by(() => {
 		return settingsStore.notifications.customPatterns
 			.filter((s) => s.length > 0)
 			.map((s, i) => {
@@ -40,11 +40,11 @@
 				}
 			})
 			.filter((p): p is { name: string; regex: RegExp } => p !== null);
-	}
+	});
 
 	const lineBuffer = createLineBuffer((line) => {
-		const customPatterns = buildCustomPatterns();
-		const result = detectNotification(line, customPatterns.length > 0 ? customPatterns : undefined);
+		const customs = compiledCustomPatterns;
+		const result = detectNotification(line, customs.length > 0 ? customs : undefined);
 		if (result.matched && appStore.activeTerminalId !== terminalId) {
 			notifications.notify(terminalId, result.pattern);
 		}
@@ -185,9 +185,7 @@
 								receivedFirstOutput = true;
 								const cmd = pendingCommand;
 								pendingCommand = null;
-								if (isAlive && ptyId) {
-									writePty(ptyId, cmd + '\r');
-								}
+								writePty(id, cmd + '\r');
 							}
 						},
 						(_code) => {
@@ -233,11 +231,12 @@
 			if (resizeObserver) resizeObserver.disconnect();
 			if (term) {
 				const buffer = term.buffer.active;
-				let content = '';
+				const lines: string[] = [];
 				for (let i = 0; i < buffer.length; i++) {
 					const line = buffer.getLine(i);
-					if (line) content += line.translateToString(true) + '\n';
+					if (line) lines.push(line.translateToString(true));
 				}
+				const content = lines.join('\n');
 				if (content.trim().length > 0) {
 					saveScrollback(terminalId, content).catch(() => {});
 				}

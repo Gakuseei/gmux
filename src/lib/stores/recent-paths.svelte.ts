@@ -1,10 +1,4 @@
-import { persistence } from './persistence.svelte';
-
-interface PathEntry {
-	path: string;
-	frequency: number;
-	lastUsed: string;
-}
+import { persistence, type PathEntry } from './persistence.svelte';
 
 const MAX_PATHS = 10;
 
