@@ -163,9 +163,12 @@ pub fn write_pty(
     data: String,
     state: State<'_, Arc<Mutex<PtyManager>>>,
 ) -> Result<(), String> {
-    let mut manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
-    manager
-        .write(&id, data.as_bytes())
+    let instance = {
+        let manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+        manager.get(&id).map_err(|e: anyhow::Error| e.to_string())?
+    };
+    let mut pty = instance.lock().map_err(|e| format!("pty lock poisoned: {e}"))?;
+    pty.write(data.as_bytes())
         .map_err(|e: anyhow::Error| e.to_string())
 }
 
@@ -176,9 +179,12 @@ pub fn resize_pty(
     cols: u16,
     state: State<'_, Arc<Mutex<PtyManager>>>,
 ) -> Result<(), String> {
-    let mut manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
-    manager
-        .resize(&id, rows, cols)
+    let instance = {
+        let manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+        manager.get(&id).map_err(|e: anyhow::Error| e.to_string())?
+    };
+    let mut pty = instance.lock().map_err(|e| format!("pty lock poisoned: {e}"))?;
+    pty.resize(rows, cols)
         .map_err(|e: anyhow::Error| e.to_string())
 }
 
@@ -187,10 +193,15 @@ pub fn kill_pty(
     id: String,
     state: State<'_, Arc<Mutex<PtyManager>>>,
 ) -> Result<(), String> {
+    let instance = {
+        let manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+        manager.get(&id).map_err(|e: anyhow::Error| e.to_string())?
+    };
+    {
+        let mut pty = instance.lock().map_err(|e| format!("pty lock poisoned: {e}"))?;
+        pty.kill().map_err(|e: anyhow::Error| e.to_string())?;
+    }
     let mut manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
-    manager
-        .kill(&id)
-        .map_err(|e: anyhow::Error| e.to_string())?;
     manager.remove(&id);
     Ok(())
 }

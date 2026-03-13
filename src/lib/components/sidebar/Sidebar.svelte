@@ -16,9 +16,17 @@
 		resizing = true;
 		const rect = sidebarEl?.getBoundingClientRect();
 		const leftOffset = rect?.left ?? 0;
+		let rafPending = false;
+		let latestEvent: MouseEvent = e;
 		const onMouseMove = (ev: MouseEvent) => {
-			const width = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, ev.clientX - leftOffset));
-			appStore.sidebarWidth = width;
+			latestEvent = ev;
+			if (rafPending) return;
+			rafPending = true;
+			requestAnimationFrame(() => {
+				rafPending = false;
+				const width = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, latestEvent.clientX - leftOffset));
+				appStore.sidebarWidth = width;
+			});
 		};
 		const onMouseUp = () => {
 			resizing = false;

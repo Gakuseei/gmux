@@ -1,6 +1,8 @@
 import { parseStatusLine } from '$lib/utils/status-parser';
 import { invoke } from '@tauri-apps/api/core';
 
+const GIT_BRANCH_DEBOUNCE_MS = 2000;
+
 class StatusStore {
 	model = $state('\u2013');
 	reasoning = $state('\u2013');
@@ -10,6 +12,8 @@ class StatusStore {
 	contextUsed = $state(0);
 	contextTotal = $state(0);
 	gitBranch = $state('\u2013');
+	private lastBranchQuery = 0;
+	private lastBranchCwd = '';
 
 	updateFromLine(line: string) {
 		const info = parseStatusLine(line);
@@ -23,6 +27,12 @@ class StatusStore {
 	}
 
 	async updateGitBranch(cwd: string) {
+		const now = Date.now();
+		if (cwd === this.lastBranchCwd && now - this.lastBranchQuery < GIT_BRANCH_DEBOUNCE_MS) {
+			return;
+		}
+		this.lastBranchQuery = now;
+		this.lastBranchCwd = cwd;
 		try {
 			const branch = await invoke<string | null>('get_current_branch', { path: cwd });
 			if (branch) this.gitBranch = branch;
@@ -41,6 +51,8 @@ class StatusStore {
 		this.contextUsed = 0;
 		this.contextTotal = 0;
 		this.gitBranch = '\u2013';
+		this.lastBranchQuery = 0;
+		this.lastBranchCwd = '';
 	}
 }
 

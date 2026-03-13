@@ -54,13 +54,21 @@
 		if (!rect) return;
 
 		const isHorizontal = node.direction === 'horizontal';
+		let rafPending = false;
+		let latestEvent: MouseEvent = e;
 
 		function onMouseMove(e: MouseEvent) {
-			if (!rect) return;
-			const delta = isHorizontal ? e.clientX - startX : e.clientY - startY;
-			const totalSize = isHorizontal ? rect.width : rect.height;
-			const rawRatio = initialRatio + startOffset + delta / totalSize;
-			ratioOffset = Math.min(RATIO_MAX, Math.max(RATIO_MIN, rawRatio)) - initialRatio;
+			latestEvent = e;
+			if (rafPending) return;
+			rafPending = true;
+			requestAnimationFrame(() => {
+				rafPending = false;
+				if (!rect) return;
+				const delta = isHorizontal ? latestEvent.clientX - startX : latestEvent.clientY - startY;
+				const totalSize = isHorizontal ? rect.width : rect.height;
+				const rawRatio = initialRatio + startOffset + delta / totalSize;
+				ratioOffset = Math.min(RATIO_MAX, Math.max(RATIO_MIN, rawRatio)) - initialRatio;
+			});
 		}
 
 		function onMouseUp() {

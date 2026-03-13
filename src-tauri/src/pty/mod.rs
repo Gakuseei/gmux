@@ -1,6 +1,9 @@
+use nix::sys::signal::{kill as nix_kill, Signal};
+use nix::unistd::Pid;
 use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use std::collections::HashMap;
 use std::io::{Read, Write};
+use std::sync::{Arc, Mutex};
 
 pub struct PtyInstance {
     writer: Box<dyn Write + Send>,
@@ -25,13 +28,23 @@ impl PtyInstance {
     }
 
     pub fn kill(&mut self) -> anyhow::Result<()> {
+        if let Some(pid) = self.child.process_id() {
+            let nix_pid = Pid::from_raw(pid as i32);
+            if nix_kill(nix_pid, Signal::SIGTERM).is_ok() {
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                if self.child.try_wait().ok().flatten().is_none() {
+                    self.child.kill()?;
+                }
+                return Ok(());
+            }
+        }
         self.child.kill()?;
         Ok(())
     }
 }
 
 pub struct PtyManager {
-    instances: HashMap<String, PtyInstance>,
+    instances: HashMap<String, Arc<Mutex<PtyInstance>>>,
 }
 
 impl PtyManager {
@@ -79,36 +92,22 @@ impl PtyManager {
 
         let id = uuid::Uuid::new_v4().to_string();
 
-        let instance = PtyInstance {
+        let instance = Arc::new(Mutex::new(PtyInstance {
             writer,
             master: pair.master,
             child,
-        };
+        }));
 
         self.instances.insert(id.clone(), instance);
 
         Ok((id, reader))
     }
 
-    pub fn write(&mut self, id: &str, data: &[u8]) -> anyhow::Result<()> {
+    pub fn get(&self, id: &str) -> anyhow::Result<Arc<Mutex<PtyInstance>>> {
         self.instances
-            .get_mut(id)
-            .ok_or_else(|| anyhow::anyhow!("pty {id} not found"))?
-            .write(data)
-    }
-
-    pub fn resize(&mut self, id: &str, rows: u16, cols: u16) -> anyhow::Result<()> {
-        self.instances
-            .get_mut(id)
-            .ok_or_else(|| anyhow::anyhow!("pty {id} not found"))?
-            .resize(rows, cols)
-    }
-
-    pub fn kill(&mut self, id: &str) -> anyhow::Result<()> {
-        self.instances
-            .get_mut(id)
-            .ok_or_else(|| anyhow::anyhow!("pty {id} not found"))?
-            .kill()
+            .get(id)
+            .cloned()
+            .ok_or_else(|| anyhow::anyhow!("pty {id} not found"))
     }
 
     pub fn remove(&mut self, id: &str) {

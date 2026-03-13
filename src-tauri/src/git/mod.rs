@@ -1,5 +1,16 @@
 use git2::{DiffDelta, DiffHunk, DiffLine as Git2DiffLine, DiffOptions, Repository, StatusOptions};
 use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+
+fn validate_repo_path(workdir: &Path, file: &str) -> Result<PathBuf, String> {
+    let canonical_workdir = workdir.canonicalize().map_err(|e| e.to_string())?;
+    let full_path = workdir.join(file);
+    let canonical_full = full_path.canonicalize().unwrap_or_else(|_| workdir.join(file));
+    if !canonical_full.starts_with(&canonical_workdir) {
+        return Err("Path escapes repository working directory".to_string());
+    }
+    Ok(canonical_full)
+}
 
 #[derive(serde::Serialize)]
 pub struct BranchInfo {
@@ -176,6 +187,7 @@ pub fn get_file_diff(path: String, file: String) -> Result<FileDiff, String> {
 
     if is_untracked {
         let workdir = repo.workdir().ok_or("No workdir")?;
+        validate_repo_path(workdir, &file)?;
         let content = std::fs::read_to_string(workdir.join(&file)).map_err(|e| e.to_string())?;
         let lines: Vec<DiffLineInfo> = content
             .lines()
@@ -258,6 +270,8 @@ pub fn get_file_diff(path: String, file: String) -> Result<FileDiff, String> {
 #[tauri::command]
 pub fn stage_file(path: String, file: String) -> Result<(), String> {
     let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+    let workdir = repo.workdir().ok_or("No workdir")?;
+    validate_repo_path(workdir, &file)?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
     index
         .add_path(std::path::Path::new(&file))
@@ -269,6 +283,8 @@ pub fn stage_file(path: String, file: String) -> Result<(), String> {
 #[tauri::command]
 pub fn unstage_file(path: String, file: String) -> Result<(), String> {
     let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
+    let workdir = repo.workdir().ok_or("No workdir")?;
+    validate_repo_path(workdir, &file)?;
     let head = repo.head().map_err(|e| e.to_string())?;
     let tree = head.peel_to_tree().map_err(|e| e.to_string())?;
     let mut index = repo.index().map_err(|e| e.to_string())?;
@@ -311,12 +327,8 @@ pub fn unstage_file(path: String, file: String) -> Result<(), String> {
 pub fn revert_file(path: String, file: String) -> Result<(), String> {
     let repo = Repository::discover(&path).map_err(|e| e.to_string())?;
     let workdir = repo.workdir().ok_or("No workdir")?;
-    let canonical_workdir = workdir.canonicalize().map_err(|e| e.to_string())?;
+    validate_repo_path(workdir, &file)?;
     let full_path = workdir.join(&file);
-    let canonical_full = full_path.canonicalize().unwrap_or_else(|_| workdir.join(&file));
-    if !canonical_full.starts_with(&canonical_workdir) {
-        return Err("Path escapes repository working directory".to_string());
-    }
 
     let head = repo.head().map_err(|e| e.to_string())?;
     let tree = head.peel_to_tree().map_err(|e| e.to_string())?;

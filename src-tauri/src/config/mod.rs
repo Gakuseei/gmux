@@ -1,5 +1,11 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+
+fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
+    let tmp = path.with_extension("tmp");
+    fs::write(&tmp, data).map_err(|e| e.to_string())?;
+    fs::rename(&tmp, path).map_err(|e| e.to_string())
+}
 
 fn validate_terminal_id(terminal_id: &str) -> Result<(), String> {
     uuid::Uuid::parse_str(terminal_id).map_err(|_| "Invalid terminal ID format".to_string())?;
@@ -22,7 +28,7 @@ fn get_scrollback_dir() -> PathBuf {
 #[tauri::command]
 pub fn save_app_state(data: String) -> Result<(), String> {
     let path = get_config_dir().join("state.json");
-    fs::write(&path, data).map_err(|e| e.to_string())
+    atomic_write(&path, data.as_bytes())
 }
 
 #[tauri::command]
@@ -39,7 +45,7 @@ pub fn load_app_state() -> Result<Option<String>, String> {
 pub fn save_scrollback(terminal_id: String, content: String) -> Result<(), String> {
     validate_terminal_id(&terminal_id)?;
     let path = get_scrollback_dir().join(format!("{}.txt", terminal_id));
-    fs::write(&path, content).map_err(|e| e.to_string())
+    atomic_write(&path, content.as_bytes())
 }
 
 #[tauri::command]
@@ -56,7 +62,7 @@ pub fn load_scrollback(terminal_id: String) -> Result<Option<String>, String> {
 #[tauri::command]
 pub fn save_settings(data: String) -> Result<(), String> {
     let path = get_config_dir().join("settings.json");
-    fs::write(&path, data).map_err(|e| e.to_string())
+    atomic_write(&path, data.as_bytes())
 }
 
 #[tauri::command]

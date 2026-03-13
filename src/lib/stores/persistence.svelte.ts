@@ -71,7 +71,8 @@ class PersistenceStore {
 				...ws,
 				sessions: ws.sessions.map((s) => ({
 					...s,
-					status: 'exited' as const,
+					ptyId: undefined,
+					status: 'ready' as const,
 					notificationCount: 0
 				}))
 			}));

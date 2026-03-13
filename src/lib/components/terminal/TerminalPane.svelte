@@ -199,6 +199,13 @@
 				}
 			} else {
 				try {
+					const saved = await loadScrollback(terminalId);
+					if (saved && term) {
+						term.write(saved);
+					}
+				} catch {
+				}
+				try {
 					let receivedFirstOutput = false;
 					let pendingCommand = command ?? null;
 
@@ -261,8 +268,10 @@
 			if (resizeObserver) resizeObserver.disconnect();
 			if (term) {
 				const buffer = term.buffer.active;
+				const maxLines = settingsStore.terminal.scrollbackLines;
 				const lines: string[] = [];
-				for (let i = 0; i < buffer.length; i++) {
+				const start = Math.max(0, buffer.length - maxLines);
+				for (let i = start; i < buffer.length; i++) {
 					const line = buffer.getLine(i);
 					if (line) lines.push(line.translateToString(true));
 				}
