@@ -16,6 +16,12 @@ use crate::terminal_box::TerminalBox;
 use crate::theme::{ColorScheme, UiTheme};
 use crate::workspace::{PaneContent, Workspace};
 
+#[derive(Debug, Clone, PartialEq)]
+enum AppView {
+    Terminals,
+    Insights,
+}
+
 fn main() -> iced::Result {
     if cfg!(target_os = "linux") && std::env::var("WGPU_BACKEND").is_err() {
         std::env::set_var("WGPU_BACKEND", "gl");
@@ -41,6 +47,8 @@ struct App {
     color_scheme: ColorScheme,
     ui_theme: UiTheme,
     sidebar_visible: bool,
+    active_view: AppView,
+    settings_open: bool,
     title: String,
 }
 
@@ -70,6 +78,8 @@ enum Message {
     SidebarToggle,
     WorkspaceActivate(usize),
     WorkspaceNew,
+    ViewSwitch(AppView),
+    SettingsToggle,
 }
 
 impl App {
@@ -93,6 +103,8 @@ impl App {
             color_scheme,
             ui_theme,
             sidebar_visible: true,
+            active_view: AppView::Terminals,
+            settings_open: false,
             title: String::from("gmux"),
         }
     }
@@ -396,6 +408,12 @@ impl App {
                     self.active_workspace = self.workspaces.len() - 1;
                 }
             }
+            Message::ViewSwitch(view) => {
+                self.active_view = view;
+            }
+            Message::SettingsToggle => {
+                self.settings_open = !self.settings_open;
+            }
         }
         iced::Task::none()
     }
@@ -418,6 +436,89 @@ impl App {
                 ..button::Style::default()
             }
         }
+    }
+
+    fn top_bar_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+
+        let bg = ui.bg_primary.to_iced();
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let accent = ui.accent.to_iced();
+        let border_color = ui.border.to_iced();
+        let hover_color = ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+        let bar_height = font_size * 2.5;
+
+        let title = text("gmux").size(font_size).color(text_primary);
+
+        let terminals_active = self.active_view == AppView::Terminals;
+        let insights_active = self.active_view == AppView::Insights;
+
+        let terminals_btn = button(
+            text("Terminals")
+                .size(font_size * 0.85)
+                .color(if terminals_active { accent } else { text_secondary }),
+        )
+        .on_press(Message::ViewSwitch(AppView::Terminals))
+        .padding([4, 12])
+        .style(if terminals_active {
+            Self::ghost_button_style(accent, hover_color)
+        } else {
+            Self::ghost_button_style(text_secondary, hover_color)
+        });
+
+        let insights_btn = button(
+            text("Insights")
+                .size(font_size * 0.85)
+                .color(if insights_active { accent } else { text_secondary }),
+        )
+        .on_press(Message::ViewSwitch(AppView::Insights))
+        .padding([4, 12])
+        .style(if insights_active {
+            Self::ghost_button_style(accent, hover_color)
+        } else {
+            Self::ghost_button_style(text_secondary, hover_color)
+        });
+
+        let settings_btn = button(
+            text("S")
+                .size(font_size * 0.85)
+                .color(text_secondary),
+        )
+        .on_press(Message::SettingsToggle)
+        .padding([4, 8])
+        .style(Self::ghost_button_style(text_secondary, hover_color));
+
+        let left_spacer = Space::new().width(Length::Fill);
+        let right_spacer = Space::new().width(Length::Fill);
+
+        let bar_content = row![
+            left_spacer,
+            title,
+            right_spacer,
+            terminals_btn,
+            insights_btn,
+            settings_btn,
+        ]
+        .spacing(4)
+        .align_y(iced::Alignment::Center)
+        .padding([0, 12]);
+
+        container(bar_content)
+            .width(Length::Fill)
+            .height(bar_height)
+            .center_y(bar_height)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(bg)),
+                border: Border {
+                    width: 1.0,
+                    color: border_color,
+                    radius: 0.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
     }
 
     fn sidebar_view(&self) -> Element<'_, Message> {
@@ -660,34 +761,58 @@ impl App {
                 .into();
         }
 
-        let grid = self.pane_grid_view();
+        let top_bar = self.top_bar_view();
 
-        if self.sidebar_visible {
-            let sidebar = self.sidebar_view();
-            row![sidebar, grid].into()
-        } else {
-            let ui = &self.ui_theme;
-            let text_secondary = ui.text_secondary.to_iced();
-            let hover_color =
-                ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
-            let font_size = self.config.appearance.font_size as f32;
+        let main_content: Element<'_, Message> = match self.active_view {
+            AppView::Terminals => {
+                let grid = self.pane_grid_view();
 
-            let expand_btn = button(
-                text("\u{203A}")
-                    .size(font_size)
-                    .color(text_secondary),
-            )
-            .on_press(Message::SidebarToggle)
-            .padding([4, 4])
-            .style(Self::ghost_button_style(text_secondary, hover_color));
+                if self.sidebar_visible {
+                    let sidebar = self.sidebar_view();
+                    row![sidebar, grid].into()
+                } else {
+                    let ui = &self.ui_theme;
+                    let text_secondary = ui.text_secondary.to_iced();
+                    let hover_color =
+                        ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+                    let font_size = self.config.appearance.font_size as f32;
 
-            let expand_col = container(
-                column![Space::new().height(Length::Fill), expand_btn],
-            )
-            .height(Length::Fill);
+                    let expand_btn = button(
+                        text("\u{203A}")
+                            .size(font_size)
+                            .color(text_secondary),
+                    )
+                    .on_press(Message::SidebarToggle)
+                    .padding([4, 4])
+                    .style(Self::ghost_button_style(
+                        text_secondary,
+                        hover_color,
+                    ));
 
-            row![expand_col, grid].into()
-        }
+                    let expand_col = container(
+                        column![Space::new().height(Length::Fill), expand_btn],
+                    )
+                    .height(Length::Fill);
+
+                    row![expand_col, grid].into()
+                }
+            }
+            AppView::Insights => {
+                let ui = &self.ui_theme;
+                let text_secondary = ui.text_secondary.to_iced();
+                let font_size = self.config.appearance.font_size as f32;
+
+                container(
+                    text("Insights view coming soon")
+                        .size(font_size)
+                        .color(text_secondary),
+                )
+                .center(Length::Fill)
+                .into()
+            }
+        };
+
+        column![top_bar, main_content].into()
     }
 
     fn move_focus(&mut self, direction: pane_grid::Direction) {
