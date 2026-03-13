@@ -923,16 +923,13 @@ impl App {
                 if let Some(ws) = self.workspaces.get(self.active_workspace) {
                     if let Some(content) = ws.panes.get(ws.focus) {
                         if let Some(tab) = content.active_tab() {
-                            let has_selection = tab
+                            let selected = tab
                                 .terminal
                                 .selection_text()
-                                .map(|s| !s.is_empty())
-                                .unwrap_or(false);
-                            if has_selection {
-                                if let Some(selected) = tab.terminal.selection_text() {
-                                    if let Some(cb) = self.clipboard.as_mut() {
-                                        let _ = cb.set_contents(selected);
-                                    }
+                                .filter(|s| !s.is_empty());
+                            if let Some(text) = selected {
+                                if let Some(cb) = self.clipboard.as_mut() {
+                                    let _ = cb.set_contents(text);
                                 }
                                 tab.terminal.clear_selection();
                             } else {
