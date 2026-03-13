@@ -35,6 +35,13 @@ enum AppView {
     Insights,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+enum InsightsTab {
+    Usage,
+    Git,
+    Info,
+}
+
 fn main() -> iced::Result {
     if cfg!(target_os = "linux") && std::env::var("WGPU_BACKEND").is_err() {
         std::env::set_var("WGPU_BACKEND", "gl");
@@ -66,6 +73,13 @@ struct App {
     key_binds: HashMap<shortcuts::KeyBind, shortcuts::Action>,
     clipboard: Option<ClipboardContext>,
     notification_detector: NotificationDetector,
+    active_insights_tab: InsightsTab,
+    usage_data: Option<usage::UsageData>,
+    usage_period: String,
+    git_branch: Option<String>,
+    git_branches: Vec<git::BranchInfo>,
+    git_files: Vec<git::FileStatus>,
+    git_diff: Option<git::FileDiff>,
 }
 
 #[derive(Debug, Clone)]
@@ -101,6 +115,11 @@ enum Message {
     SettingsScrollbackChange(i32),
     SettingsCursorStyleChange(CursorStyle),
     KeyEvent(Key, Modifiers),
+    InsightsTabSwitch(InsightsTab),
+    InsightsRefresh,
+    UsagePeriodChange(String),
+    GitSelectFile(String),
+    GitBackFromDiff,
 }
 
 impl App {
@@ -130,6 +149,13 @@ impl App {
             key_binds: shortcuts::default_keybindings(),
             clipboard: ClipboardContext::new().ok(),
             notification_detector: NotificationDetector::new(),
+            active_insights_tab: InsightsTab::Usage,
+            usage_data: None,
+            usage_period: String::from("today"),
+            git_branch: None,
+            git_branches: Vec::new(),
+            git_files: Vec::new(),
+            git_diff: None,
         }
     }
 
@@ -474,7 +500,10 @@ impl App {
                 }
             }
             Message::ViewSwitch(view) => {
-                self.active_view = view;
+                self.active_view = view.clone();
+                if view == AppView::Insights {
+                    return self.update(Message::InsightsRefresh);
+                }
             }
             Message::SettingsToggle => {
                 self.settings_open = !self.settings_open;
@@ -506,6 +535,47 @@ impl App {
                 {
                     return self.handle_shortcut(action);
                 }
+            }
+            Message::InsightsTabSwitch(tab) => {
+                self.active_insights_tab = tab.clone();
+                if tab == InsightsTab::Git {
+                    if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                        let cwd = ws.cwd.to_string_lossy().to_string();
+                        self.git_branch = git::get_current_branch(cwd.clone()).ok().flatten();
+                        self.git_branches = git::get_branches(cwd.clone()).unwrap_or_default();
+                        self.git_files = git::get_git_status(cwd).unwrap_or_default();
+                        self.git_diff = None;
+                    }
+                }
+            }
+            Message::InsightsRefresh => {
+                match self.active_insights_tab {
+                    InsightsTab::Usage => {
+                        self.usage_data = usage::get_usage_data(self.usage_period.clone()).ok();
+                    }
+                    InsightsTab::Git => {
+                        if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                            let cwd = ws.cwd.to_string_lossy().to_string();
+                            self.git_branch = git::get_current_branch(cwd.clone()).ok().flatten();
+                            self.git_branches = git::get_branches(cwd.clone()).unwrap_or_default();
+                            self.git_files = git::get_git_status(cwd).unwrap_or_default();
+                        }
+                    }
+                    InsightsTab::Info => {}
+                }
+            }
+            Message::UsagePeriodChange(period) => {
+                self.usage_period = period;
+                self.usage_data = usage::get_usage_data(self.usage_period.clone()).ok();
+            }
+            Message::GitSelectFile(path) => {
+                if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                    let cwd = ws.cwd.to_string_lossy().to_string();
+                    self.git_diff = git::get_file_diff(cwd, path).ok();
+                }
+            }
+            Message::GitBackFromDiff => {
+                self.git_diff = None;
             }
         }
         iced::Task::none()
@@ -924,6 +994,664 @@ impl App {
             .into()
     }
 
+    fn format_tokens(n: u64) -> String {
+        if n >= 1_000_000 {
+            format!("{:.1}M", n as f64 / 1_000_000.0)
+        } else if n >= 1_000 {
+            format!("{:.0}K", n as f64 / 1_000.0)
+        } else {
+            format!("{}", n)
+        }
+    }
+
+    fn format_cost(c: f64) -> String {
+        if c < 0.01 && c > 0.0 {
+            String::from("<$0.01")
+        } else {
+            format!("${:.2}", c)
+        }
+    }
+
+    fn token_cost(tokens: u64, rate_per_million: f64) -> f64 {
+        tokens as f64 * rate_per_million / 1_000_000.0
+    }
+
+    fn insights_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+        let accent = ui.accent.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let hover_color = ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+        let border_color = ui.border.to_iced();
+        let sidebar_bg = ui.bg_sidebar.to_iced();
+
+        let nav_tabs = [
+            (InsightsTab::Usage, "Usage"),
+            (InsightsTab::Git, "Git"),
+            (InsightsTab::Info, "Info"),
+        ];
+
+        let nav_items: Vec<Element<'_, Message>> = nav_tabs
+            .iter()
+            .map(|(tab, label)| {
+                let is_active = self.active_insights_tab == *tab;
+                let label_color = if is_active { accent } else { text_secondary };
+                let bg = if is_active {
+                    ui.accent.to_iced_alpha(ui.active_highlight_alpha)
+                } else {
+                    iced::Color::TRANSPARENT
+                };
+                let active_bg = bg;
+                button(
+                    text(*label)
+                        .size(font_size * 0.85)
+                        .color(label_color),
+                )
+                .on_press(Message::InsightsTabSwitch(tab.clone()))
+                .padding([8, 16])
+                .width(Length::Fill)
+                .style(move |_theme: &Theme, status| {
+                    let bg_color = match status {
+                        button::Status::Hovered => hover_color,
+                        _ => active_bg,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg_color)),
+                        text_color: label_color,
+                        border: Border::default(),
+                        ..button::Style::default()
+                    }
+                })
+                .into()
+            })
+            .collect();
+
+        let nav_header = container(
+            text("INSIGHTS")
+                .size(font_size * 0.7)
+                .color(text_secondary),
+        )
+        .padding([12, 16]);
+
+        let nav_panel = container(
+            column![nav_header]
+                .push(column(nav_items).spacing(2)),
+        )
+        .width(Length::Fixed(font_size * 13.0))
+        .height(Length::Fill)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(sidebar_bg)),
+            border: Border {
+                width: 1.0,
+                color: border_color,
+                ..Default::default()
+            },
+            ..Default::default()
+        });
+
+        let content_panel: Element<'_, Message> = match self.active_insights_tab {
+            InsightsTab::Usage => self.insights_usage_view(),
+            InsightsTab::Git => self.insights_git_view(),
+            InsightsTab::Info => self.insights_info_view(),
+        };
+
+        row![nav_panel, content_panel].into()
+    }
+
+    fn insights_usage_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let accent = ui.accent.to_iced();
+        let hover_color = ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+        let surface_bg = ui.bg_surface.to_iced();
+        let border_color = ui.border.to_iced();
+        let bg_primary = ui.bg_primary.to_iced();
+
+        let periods = [
+            ("today", "Today"),
+            ("weekly", "Weekly"),
+            ("monthly", "Monthly"),
+        ];
+
+        let period_buttons: Vec<Element<'_, Message>> = periods
+            .iter()
+            .map(|(key, label)| {
+                let is_active = self.usage_period == *key;
+                let label_color = if is_active { accent } else { text_secondary };
+                let active_bg = if is_active {
+                    ui.accent.to_iced_alpha(ui.active_highlight_alpha)
+                } else {
+                    iced::Color::TRANSPARENT
+                };
+                button(
+                    text(*label)
+                        .size(font_size * 0.8)
+                        .color(label_color),
+                )
+                .on_press(Message::UsagePeriodChange(key.to_string()))
+                .padding([4, 12])
+                .style(move |_theme: &Theme, status| {
+                    let bg = match status {
+                        button::Status::Hovered => hover_color,
+                        _ => active_bg,
+                    };
+                    button::Style {
+                        background: Some(Background::Color(bg)),
+                        text_color: label_color,
+                        border: Border::default(),
+                        ..button::Style::default()
+                    }
+                })
+                .into()
+            })
+            .collect();
+
+        let refresh_btn = button(
+            text("\u{21BB}")
+                .size(font_size * 0.9)
+                .color(text_secondary),
+        )
+        .on_press(Message::InsightsRefresh)
+        .padding([4, 8])
+        .style(Self::ghost_button_style(text_secondary, hover_color));
+
+        let toolbar = row(period_buttons)
+            .push(Space::new().width(Length::Fill))
+            .push(refresh_btn)
+            .spacing(4)
+            .align_y(iced::Alignment::Center);
+
+        let cost_rates = self
+            .config
+            .cost_rates
+            .get("claude")
+            .cloned()
+            .unwrap_or_default();
+
+        let (total_input, total_output, total_cache_read, total_cache_write, sessions) =
+            match &self.usage_data {
+                Some(data) => (
+                    data.total_input,
+                    data.total_output,
+                    data.total_cache_read,
+                    data.total_cache_write,
+                    &data.sessions,
+                ),
+                None => (0, 0, 0, 0, &Vec::new() as &Vec<usage::SessionUsage>),
+            };
+
+        let input_cost = Self::token_cost(total_input, cost_rates.input);
+        let output_cost = Self::token_cost(total_output, cost_rates.output);
+        let cache_read_cost = Self::token_cost(total_cache_read, cost_rates.cache_read);
+        let cache_write_cost = Self::token_cost(total_cache_write, cost_rates.cache_write);
+        let total_cost = input_cost + output_cost + cache_read_cost + cache_write_cost;
+
+        let token_header = text("TOKEN BREAKDOWN")
+            .size(font_size * 0.7)
+            .color(text_secondary);
+
+        let make_token_row = |label: String, tokens: u64, cost: f64| -> Element<'_, Message> {
+            row![
+                text(label)
+                    .size(font_size * 0.85)
+                    .color(text_secondary)
+                    .width(Length::FillPortion(2)),
+                text(Self::format_tokens(tokens))
+                    .size(font_size * 0.85)
+                    .color(text_primary)
+                    .width(Length::FillPortion(1)),
+                text(Self::format_cost(cost))
+                    .size(font_size * 0.85)
+                    .color(text_primary)
+                    .width(Length::FillPortion(1)),
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+            .into()
+        };
+
+        let token_table = column![
+            row![
+                text("Type")
+                    .size(font_size * 0.7)
+                    .color(text_secondary)
+                    .width(Length::FillPortion(2)),
+                text("Tokens")
+                    .size(font_size * 0.7)
+                    .color(text_secondary)
+                    .width(Length::FillPortion(1)),
+                text("Cost")
+                    .size(font_size * 0.7)
+                    .color(text_secondary)
+                    .width(Length::FillPortion(1)),
+            ]
+            .spacing(8),
+            make_token_row(String::from("Input"), total_input, input_cost),
+            make_token_row(String::from("Output"), total_output, output_cost),
+            make_token_row(String::from("Cache Read"), total_cache_read, cache_read_cost),
+            make_token_row(String::from("Cache Write"), total_cache_write, cache_write_cost),
+            container(Space::new().width(Length::Fill).height(1))
+                .style(move |_theme: &Theme| container::Style {
+                    background: Some(Background::Color(border_color)),
+                    ..Default::default()
+                }),
+            row![
+                text("Total")
+                    .size(font_size * 0.85)
+                    .color(accent)
+                    .width(Length::FillPortion(2)),
+                text(Self::format_tokens(
+                    total_input + total_output + total_cache_read + total_cache_write,
+                ))
+                .size(font_size * 0.85)
+                .color(text_primary)
+                .width(Length::FillPortion(1)),
+                text(Self::format_cost(total_cost))
+                    .size(font_size * 0.85)
+                    .color(accent)
+                    .width(Length::FillPortion(1)),
+            ]
+            .spacing(8),
+        ]
+        .spacing(6);
+
+        let token_card = container(
+            column![token_header, token_table].spacing(8).padding(16),
+        )
+        .width(Length::Fill)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(surface_bg)),
+            border: Border {
+                width: 1.0,
+                color: border_color,
+                radius: 6.0.into(),
+            },
+            ..Default::default()
+        });
+
+        let sessions_header = text("SESSIONS")
+            .size(font_size * 0.7)
+            .color(text_secondary);
+
+        let session_items: Vec<Element<'_, Message>> = sessions
+            .iter()
+            .map(|session| {
+                let session_cost = Self::token_cost(session.input_tokens, cost_rates.input)
+                    + Self::token_cost(session.output_tokens, cost_rates.output)
+                    + Self::token_cost(session.cache_read_tokens, cost_rates.cache_read)
+                    + Self::token_cost(session.cache_write_tokens, cost_rates.cache_write);
+
+                let id_display = if session.session_id.len() > 12 {
+                    format!("{}...", &session.session_id[..12])
+                } else {
+                    session.session_id.clone()
+                };
+
+                let total_tokens = session.input_tokens
+                    + session.output_tokens
+                    + session.cache_read_tokens
+                    + session.cache_write_tokens;
+
+                container(
+                    row![
+                        text(id_display)
+                            .size(font_size * 0.8)
+                            .color(text_primary)
+                            .width(Length::FillPortion(3)),
+                        text(Self::format_tokens(total_tokens))
+                            .size(font_size * 0.8)
+                            .color(text_secondary)
+                            .width(Length::FillPortion(1)),
+                        text(Self::format_cost(session_cost))
+                            .size(font_size * 0.8)
+                            .color(text_primary)
+                            .width(Length::FillPortion(1)),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center),
+                )
+                .padding([6, 12])
+                .style(move |_theme: &Theme| container::Style {
+                    background: Some(Background::Color(surface_bg)),
+                    border: Border {
+                        width: 1.0,
+                        color: border_color,
+                        radius: 4.0.into(),
+                    },
+                    ..Default::default()
+                })
+                .into()
+            })
+            .collect();
+
+        let sessions_list =
+            scrollable(column(session_items).spacing(4)).height(Length::Fill);
+
+        let content = column![toolbar, token_card, sessions_header, sessions_list]
+            .spacing(12)
+            .padding(20)
+            .width(Length::Fill);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(bg_primary)),
+                ..Default::default()
+            })
+            .into()
+    }
+
+    fn insights_git_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let hover_color = ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+        let surface_bg = ui.bg_surface.to_iced();
+        let border_color = ui.border.to_iced();
+        let bg_primary = ui.bg_primary.to_iced();
+        let diff_add_bg = ui.diff_add.to_iced();
+        let diff_del_bg = ui.diff_delete.to_iced();
+
+        if let Some(diff) = &self.git_diff {
+            let back_btn = button(
+                text("\u{2190} Back")
+                    .size(font_size * 0.85)
+                    .color(text_secondary),
+            )
+            .on_press(Message::GitBackFromDiff)
+            .padding([4, 12])
+            .style(Self::ghost_button_style(text_secondary, hover_color));
+
+            let file_header = text(&diff.path)
+                .size(font_size)
+                .color(text_primary);
+
+            let mut diff_lines: Vec<Element<'_, Message>> = Vec::new();
+
+            for hunk in &diff.hunks {
+                for line in hunk {
+                    let (line_bg, line_color) = match line.origin.as_str() {
+                        "+" => (diff_add_bg, ui.text_primary.to_iced()),
+                        "-" => (diff_del_bg, ui.text_primary.to_iced()),
+                        _ => (iced::Color::TRANSPARENT, text_secondary),
+                    };
+                    let prefix = match line.origin.as_str() {
+                        "+" => "+ ",
+                        "-" => "- ",
+                        _ => "  ",
+                    };
+                    let line_text = format!("{}{}", prefix, line.content.trim_end());
+                    let line_bg_captured = line_bg;
+                    let line_element: Element<'_, Message> = container(
+                        text(line_text)
+                            .size(font_size * 0.8)
+                            .color(line_color)
+                            .font(Font::MONOSPACE),
+                    )
+                    .width(Length::Fill)
+                    .padding([1, 8])
+                    .style(move |_theme: &Theme| container::Style {
+                        background: Some(Background::Color(line_bg_captured)),
+                        ..Default::default()
+                    })
+                    .into();
+                    diff_lines.push(line_element);
+                }
+            }
+
+            let diff_content =
+                scrollable(column(diff_lines).spacing(0)).height(Length::Fill);
+
+            let content = column![back_btn, file_header, diff_content]
+                .spacing(8)
+                .padding(20)
+                .width(Length::Fill);
+
+            return container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(move |_theme: &Theme| container::Style {
+                    background: Some(Background::Color(bg_primary)),
+                    ..Default::default()
+                })
+                .into();
+        }
+
+        let branch_display = match &self.git_branch {
+            Some(name) => format!("Branch: {}", name),
+            None => String::from("No git repository"),
+        };
+
+        let branch_text = text(branch_display)
+            .size(font_size)
+            .color(text_primary);
+
+        let refresh_btn = button(
+            text("\u{21BB}")
+                .size(font_size * 0.9)
+                .color(text_secondary),
+        )
+        .on_press(Message::InsightsRefresh)
+        .padding([4, 8])
+        .style(Self::ghost_button_style(text_secondary, hover_color));
+
+        let header_row = row![branch_text, Space::new().width(Length::Fill), refresh_btn]
+            .align_y(iced::Alignment::Center);
+
+        let files_header = text("CHANGED FILES")
+            .size(font_size * 0.7)
+            .color(text_secondary);
+
+        let file_items: Vec<Element<'_, Message>> = self
+            .git_files
+            .iter()
+            .map(|file| {
+                let (status_char, status_color) = match file.status.as_str() {
+                    "added" => ("A", iced::Color::from_rgb(0.3, 0.8, 0.3)),
+                    "deleted" => ("D", iced::Color::from_rgb(0.9, 0.3, 0.3)),
+                    _ => ("M", iced::Color::from_rgb(0.9, 0.7, 0.2)),
+                };
+
+                let stats = format!("+{} -{}", file.additions, file.deletions);
+                let file_path = file.path.clone();
+
+                button(
+                    row![
+                        text(status_char)
+                            .size(font_size * 0.8)
+                            .color(status_color)
+                            .width(Length::Fixed(font_size * 2.0)),
+                        text(&file.path)
+                            .size(font_size * 0.8)
+                            .color(text_primary)
+                            .width(Length::Fill),
+                        text(stats)
+                            .size(font_size * 0.75)
+                            .color(text_secondary),
+                    ]
+                    .spacing(8)
+                    .align_y(iced::Alignment::Center),
+                )
+                .on_press(Message::GitSelectFile(file_path))
+                .padding([6, 12])
+                .width(Length::Fill)
+                .style(move |_theme: &Theme, status| {
+                    let bg = match status {
+                        button::Status::Hovered => Some(Background::Color(hover_color)),
+                        _ => Some(Background::Color(surface_bg)),
+                    };
+                    button::Style {
+                        background: bg,
+                        text_color: text_primary,
+                        border: Border {
+                            width: 1.0,
+                            color: border_color,
+                            radius: 4.0.into(),
+                        },
+                        ..button::Style::default()
+                    }
+                })
+                .into()
+            })
+            .collect();
+
+        let empty_state: Element<'_, Message> = if self.git_files.is_empty() {
+            container(
+                text("No changes detected")
+                    .size(font_size * 0.85)
+                    .color(text_secondary),
+            )
+            .padding(20)
+            .into()
+        } else {
+            column(file_items).spacing(4).into()
+        };
+
+        let files_list = scrollable(empty_state).height(Length::Fill);
+
+        let content = column![header_row, files_header, files_list]
+            .spacing(12)
+            .padding(20)
+            .width(Length::Fill);
+
+        container(content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(bg_primary)),
+                ..Default::default()
+            })
+            .into()
+    }
+
+    fn insights_info_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let surface_bg = ui.bg_surface.to_iced();
+        let border_color = ui.border.to_iced();
+        let bg_primary = ui.bg_primary.to_iced();
+
+        let make_info_row = |label: String, value: String| -> Element<'_, Message> {
+            row![
+                text(label)
+                    .size(font_size * 0.85)
+                    .color(text_secondary)
+                    .width(Length::FillPortion(1)),
+                text(value)
+                    .size(font_size * 0.85)
+                    .color(text_primary)
+                    .width(Length::FillPortion(2)),
+            ]
+            .spacing(8)
+            .align_y(iced::Alignment::Center)
+            .into()
+        };
+
+        let app_header = text("APPLICATION")
+            .size(font_size * 0.7)
+            .color(text_secondary);
+        let app_card = container(
+            column![
+                app_header,
+                make_info_row(String::from("Name"), String::from("gmux")),
+                make_info_row(String::from("Version"), String::from(env!("CARGO_PKG_VERSION"))),
+            ]
+            .spacing(8)
+            .padding(16),
+        )
+        .width(Length::Fill)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(surface_bg)),
+            border: Border {
+                width: 1.0,
+                color: border_color,
+                radius: 6.0.into(),
+            },
+            ..Default::default()
+        });
+
+        let sys_header = text("SYSTEM")
+            .size(font_size * 0.7)
+            .color(text_secondary);
+        let sys_card = container(
+            column![
+                sys_header,
+                make_info_row(String::from("OS"), String::from(std::env::consts::OS)),
+                make_info_row(String::from("Architecture"), String::from(std::env::consts::ARCH)),
+            ]
+            .spacing(8)
+            .padding(16),
+        )
+        .width(Length::Fill)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(surface_bg)),
+            border: Border {
+                width: 1.0,
+                color: border_color,
+                radius: 6.0.into(),
+            },
+            ..Default::default()
+        });
+
+        let workspace_count = self.workspaces.len();
+        let terminal_count: usize = self
+            .workspaces
+            .iter()
+            .map(|ws| {
+                ws.panes
+                    .iter()
+                    .map(|(_, content)| content.tabs.len())
+                    .sum::<usize>()
+            })
+            .sum();
+
+        let ws_header = text("WORKSPACES")
+            .size(font_size * 0.7)
+            .color(text_secondary);
+        let ws_card = container(
+            column![
+                ws_header,
+                make_info_row(String::from("Workspaces"), format!("{}", workspace_count)),
+                make_info_row(String::from("Terminals"), format!("{}", terminal_count)),
+            ]
+            .spacing(8)
+            .padding(16),
+        )
+        .width(Length::Fill)
+        .style(move |_theme: &Theme| container::Style {
+            background: Some(Background::Color(surface_bg)),
+            border: Border {
+                width: 1.0,
+                color: border_color,
+                radius: 6.0.into(),
+            },
+            ..Default::default()
+        });
+
+        let content = column![app_card, sys_card, ws_card]
+            .spacing(16)
+            .padding(20)
+            .max_width(600);
+
+        let scrollable_content =
+            scrollable(container(content).center_x(Length::Fill)).height(Length::Fill);
+
+        container(scrollable_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(bg_primary)),
+                ..Default::default()
+            })
+            .into()
+    }
+
     fn pane_grid_view(&self) -> Element<'_, Message> {
         let Some(workspace) = self.workspaces.get(self.active_workspace) else {
             return container(text("No workspace"))
@@ -1070,17 +1798,7 @@ impl App {
                 }
             }
             AppView::Insights => {
-                let ui = &self.ui_theme;
-                let text_secondary = ui.text_secondary.to_iced();
-                let font_size = self.config.appearance.font_size as f32;
-
-                container(
-                    text("Insights view coming soon")
-                        .size(font_size)
-                        .color(text_secondary),
-                )
-                .center(Length::Fill)
-                .into()
+                self.insights_view()
             }
         };
 
