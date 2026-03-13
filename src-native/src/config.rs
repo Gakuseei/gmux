@@ -79,16 +79,30 @@ pub struct TerminalConfig {
     pub cursor_style: CursorStyle,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CursorStyle {
     Block,
     Bar,
     Underline,
 }
 
+impl CursorStyle {
+    pub const ALL: [Self; 3] = [Self::Block, Self::Bar, Self::Underline];
+}
+
 impl Default for CursorStyle {
     fn default() -> Self {
         Self::Block
+    }
+}
+
+impl std::fmt::Display for CursorStyle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Block => write!(f, "Block"),
+            Self::Bar => write!(f, "Bar"),
+            Self::Underline => write!(f, "Underline"),
+        }
     }
 }
 

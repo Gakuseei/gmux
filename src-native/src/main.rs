@@ -4,7 +4,10 @@ use std::time::Duration;
 
 use copypasta::{ClipboardContext, ClipboardProvider};
 use iced::keyboard::{Key, Modifiers};
-use iced::widget::{button, column, container, pane_grid, row, scrollable, text, Space};
+use iced::widget::{
+    button, column, container, pane_grid, pick_list, row, scrollable, text,
+    text_input, Space,
+};
 use iced::{Background, Border, Element, Font, Length, Size, Theme};
 
 mod config;
@@ -17,7 +20,7 @@ mod terminal_box;
 mod theme;
 mod workspace;
 
-use crate::config::Config;
+use crate::config::{Config, CursorStyle};
 use crate::notifications::NotificationDetector;
 use crate::terminal::TerminalEvent;
 use crate::terminal_box::TerminalBox;
@@ -91,6 +94,10 @@ enum Message {
     WorkspaceNew,
     ViewSwitch(AppView),
     SettingsToggle,
+    SettingsFontSizeChange(i32),
+    SettingsShellChange(String),
+    SettingsScrollbackChange(i32),
+    SettingsCursorStyleChange(CursorStyle),
     KeyEvent(Key, Modifiers),
 }
 
@@ -470,6 +477,27 @@ impl App {
             Message::SettingsToggle => {
                 self.settings_open = !self.settings_open;
             }
+            Message::SettingsFontSizeChange(delta) => {
+                let new_size =
+                    (self.config.appearance.font_size as i32 + delta).max(8).min(32) as u32;
+                self.config.appearance.font_size = new_size;
+                let _ = self.config.save();
+            }
+            Message::SettingsShellChange(shell) => {
+                self.config.terminal.default_shell = shell;
+                let _ = self.config.save();
+            }
+            Message::SettingsScrollbackChange(delta) => {
+                let new_val =
+                    (self.config.terminal.scrollback_lines as i32 + delta).max(100).min(100_000)
+                        as u32;
+                self.config.terminal.scrollback_lines = new_val;
+                let _ = self.config.save();
+            }
+            Message::SettingsCursorStyleChange(style) => {
+                self.config.terminal.cursor_style = style;
+                let _ = self.config.save();
+            }
             Message::KeyEvent(key, modifiers) => {
                 if let Some(action) =
                     shortcuts::lookup(&self.key_binds, modifiers, &key)
@@ -719,6 +747,181 @@ impl App {
             .into()
     }
 
+    fn settings_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
+
+        let surface_bg = ui.bg_surface.to_iced();
+        let primary_bg = ui.bg_primary.to_iced();
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let accent = ui.accent.to_iced();
+        let hover_color = ui.hover_overlay.to_iced_alpha(ui.hover_overlay_alpha);
+
+        let close_btn = button(
+            text("\u{00D7}").size(font_size * 1.2).color(text_secondary),
+        )
+        .on_press(Message::SettingsToggle)
+        .padding([4, 8])
+        .style(Self::ghost_button_style(text_secondary, hover_color));
+
+        let header = row![
+            text("Settings").size(font_size * 1.4).color(text_primary),
+            Space::new().width(Length::Fill),
+            close_btn,
+        ]
+        .align_y(iced::Alignment::Center)
+        .padding([0, 16]);
+
+        let appearance_header =
+            text("Appearance").size(font_size * 1.1).color(accent);
+
+        let font_size_label =
+            text("Font Size").size(font_size * 0.9).color(text_secondary);
+        let font_size_value = text(format!("{}", self.config.appearance.font_size))
+            .size(font_size)
+            .color(text_primary);
+        let font_dec = button(text("\u{2212}").size(font_size).color(text_primary))
+            .on_press(Message::SettingsFontSizeChange(-1))
+            .padding([4, 10])
+            .style(Self::ghost_button_style(text_primary, hover_color));
+        let font_inc = button(text("+").size(font_size).color(text_primary))
+            .on_press(Message::SettingsFontSizeChange(1))
+            .padding([4, 10])
+            .style(Self::ghost_button_style(text_primary, hover_color));
+        let font_size_row = row![
+            font_size_label,
+            Space::new().width(Length::Fill),
+            font_dec,
+            font_size_value,
+            font_inc,
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(8);
+
+        let accent_label =
+            text("Accent Color").size(font_size * 0.9).color(text_secondary);
+        let accent_value = text(&self.config.appearance.accent_color)
+            .size(font_size)
+            .color(text_primary);
+        let accent_row = row![
+            accent_label,
+            Space::new().width(Length::Fill),
+            accent_value,
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(8);
+
+        let terminal_header =
+            text("Terminal").size(font_size * 1.1).color(accent);
+
+        let shell_label =
+            text("Default Shell").size(font_size * 0.9).color(text_secondary);
+        let shell_input = text_input("", &self.config.terminal.default_shell)
+            .on_input(Message::SettingsShellChange)
+            .size(font_size)
+            .width(Length::Fixed(font_size * 20.0))
+            .style(move |_theme: &Theme, status| {
+                let border_c = match status {
+                    text_input::Status::Focused { .. } => accent,
+                    _ => primary_bg,
+                };
+                text_input::Style {
+                    background: Background::Color(primary_bg),
+                    border: Border {
+                        width: 1.0,
+                        color: border_c,
+                        radius: 4.0.into(),
+                    },
+                    icon: text_primary,
+                    placeholder: text_secondary,
+                    value: text_primary,
+                    selection: accent,
+                }
+            });
+        let shell_row = row![
+            shell_label,
+            Space::new().width(Length::Fill),
+            shell_input,
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(8);
+
+        let scrollback_label =
+            text("Scrollback Lines")
+                .size(font_size * 0.9)
+                .color(text_secondary);
+        let scrollback_value =
+            text(format!("{}", self.config.terminal.scrollback_lines))
+                .size(font_size)
+                .color(text_primary);
+        let scrollback_dec =
+            button(text("\u{2212}").size(font_size).color(text_primary))
+                .on_press(Message::SettingsScrollbackChange(-1000))
+                .padding([4, 10])
+                .style(Self::ghost_button_style(text_primary, hover_color));
+        let scrollback_inc =
+            button(text("+").size(font_size).color(text_primary))
+                .on_press(Message::SettingsScrollbackChange(1000))
+                .padding([4, 10])
+                .style(Self::ghost_button_style(text_primary, hover_color));
+        let scrollback_row = row![
+            scrollback_label,
+            Space::new().width(Length::Fill),
+            scrollback_dec,
+            scrollback_value,
+            scrollback_inc,
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(8);
+
+        let cursor_label =
+            text("Cursor Style").size(font_size * 0.9).color(text_secondary);
+        let cursor_pick = pick_list(
+            &CursorStyle::ALL[..],
+            Some(&self.config.terminal.cursor_style),
+            Message::SettingsCursorStyleChange,
+        )
+        .text_size(font_size);
+        let cursor_row = row![
+            cursor_label,
+            Space::new().width(Length::Fill),
+            cursor_pick,
+        ]
+        .align_y(iced::Alignment::Center)
+        .spacing(8);
+
+        let section_spacing = font_size * 1.5;
+
+        let content = column![
+            header,
+            appearance_header,
+            font_size_row,
+            accent_row,
+            Space::new().height(section_spacing),
+            terminal_header,
+            shell_row,
+            scrollback_row,
+            cursor_row,
+        ]
+        .spacing(12)
+        .padding(24)
+        .max_width(600);
+
+        let scrollable_content =
+            scrollable(container(content).center_x(Length::Fill))
+                .height(Length::Fill);
+
+        container(scrollable_content)
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(surface_bg)),
+                ..Default::default()
+            })
+            .into()
+    }
+
     fn pane_grid_view(&self) -> Element<'_, Message> {
         let Some(workspace) = self.workspaces.get(self.active_workspace) else {
             return container(text("No workspace"))
@@ -825,6 +1028,10 @@ impl App {
         }
 
         let top_bar = self.top_bar_view();
+
+        if self.settings_open {
+            return column![top_bar, self.settings_view()].into();
+        }
 
         let main_content: Element<'_, Message> = match self.active_view {
             AppView::Terminals => {
