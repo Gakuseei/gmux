@@ -33,6 +33,8 @@ pub fn run() {
             git::stage_file,
             git::revert_file,
             usage::get_usage_data,
+            commands::get_system_info,
+            commands::check_cli_exists,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

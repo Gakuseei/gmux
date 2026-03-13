@@ -4,6 +4,7 @@
 	import type { InsightsTab } from '$lib/types/workspace';
 	import UsageTab from './UsageTab.svelte';
 	import GitTab from './GitTab.svelte';
+	import InfoTab from './InfoTab.svelte';
 
 	const tabs: { id: InsightsTab; label: string }[] = [
 		{ id: 'usage', label: 'Usage' },
@@ -37,7 +38,7 @@
 		{:else if appStore.activeInsightsTab === 'git'}
 			<GitTab />
 		{:else if appStore.activeInsightsTab === 'info'}
-			<div class="tab-placeholder">Info</div>
+			<InfoTab />
 		{/if}
 	</div>
 </div>
@@ -100,12 +101,4 @@
 		border-radius: 3px;
 	}
 
-	.tab-placeholder {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		height: 100%;
-		color: var(--text-secondary);
-		font-size: 14px;
-	}
 </style>

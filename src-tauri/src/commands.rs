@@ -1,9 +1,40 @@
 use crate::pty::PtyManager;
 use futures::future::join_all;
 use std::io::Read;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
+
+#[derive(serde::Serialize)]
+pub struct SystemInfo {
+    pub os: String,
+    pub arch: String,
+    pub hostname: String,
+}
+
+#[tauri::command]
+pub fn get_system_info() -> Result<SystemInfo, String> {
+    let hostname = Command::new("hostname")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        .unwrap_or_else(|_| "unknown".to_string());
+
+    Ok(SystemInfo {
+        os: std::env::consts::OS.to_string(),
+        arch: std::env::consts::ARCH.to_string(),
+        hostname,
+    })
+}
+
+#[tauri::command]
+pub fn check_cli_exists(command: String) -> Result<bool, String> {
+    Command::new("which")
+        .arg(&command)
+        .output()
+        .map(|o| o.status.success())
+        .map_err(|e| e.to_string())
+}
 
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
