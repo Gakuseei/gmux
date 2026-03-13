@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
+use copypasta::{ClipboardContext, ClipboardProvider};
 use iced::keyboard::{Key, Modifiers};
 use iced::widget::{button, column, container, pane_grid, row, scrollable, text, Space};
 use iced::{Background, Border, Element, Font, Length, Size, Theme};
@@ -54,6 +55,7 @@ struct App {
     settings_open: bool,
     title: String,
     key_binds: HashMap<shortcuts::KeyBind, shortcuts::Action>,
+    clipboard: Option<ClipboardContext>,
 }
 
 #[derive(Debug, Clone)]
@@ -112,6 +114,7 @@ impl App {
             settings_open: false,
             title: String::from("gmux"),
             key_binds: shortcuts::default_keybindings(),
+            clipboard: ClipboardContext::new().ok(),
         }
     }
 
@@ -885,9 +888,62 @@ impl App {
             shortcuts::Action::SettingsToggle => {
                 self.update(Message::SettingsToggle)
             }
-            shortcuts::Action::Copy
-            | shortcuts::Action::Paste
-            | shortcuts::Action::Find
+            shortcuts::Action::Copy => {
+                if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                    if let Some(content) = ws.panes.get(ws.focus) {
+                        if let Some(tab) = content.active_tab() {
+                            if let Some(selected) = tab.terminal.selection_text() {
+                                if !selected.is_empty() {
+                                    if let Some(cb) = self.clipboard.as_mut() {
+                                        let _ = cb.set_contents(selected);
+                                    }
+                                }
+                            }
+                            tab.terminal.clear_selection();
+                        }
+                    }
+                }
+                iced::Task::none()
+            }
+            shortcuts::Action::Paste => {
+                if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                    if let Some(content) = ws.panes.get(ws.focus) {
+                        if let Some(tab) = content.active_tab() {
+                            if let Some(cb) = self.clipboard.as_mut() {
+                                if let Ok(text) = cb.get_contents() {
+                                    tab.terminal.paste(&text);
+                                }
+                            }
+                        }
+                    }
+                }
+                iced::Task::none()
+            }
+            shortcuts::Action::CopyOrSigint => {
+                if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                    if let Some(content) = ws.panes.get(ws.focus) {
+                        if let Some(tab) = content.active_tab() {
+                            let has_selection = tab
+                                .terminal
+                                .selection_text()
+                                .map(|s| !s.is_empty())
+                                .unwrap_or(false);
+                            if has_selection {
+                                if let Some(selected) = tab.terminal.selection_text() {
+                                    if let Some(cb) = self.clipboard.as_mut() {
+                                        let _ = cb.set_contents(selected);
+                                    }
+                                }
+                                tab.terminal.clear_selection();
+                            } else {
+                                tab.terminal.input(b"\x03");
+                            }
+                        }
+                    }
+                }
+                iced::Task::none()
+            }
+            shortcuts::Action::Find
             | shortcuts::Action::FontSizeIncrease
             | shortcuts::Action::FontSizeDecrease
             | shortcuts::Action::FontSizeReset => iced::Task::none(),

@@ -13,6 +13,7 @@ pub struct KeyBind {
 pub enum Action {
     Copy,
     Paste,
+    CopyOrSigint,
     TabNew,
     TabClose,
     TabNext,
@@ -51,6 +52,20 @@ pub fn default_keybindings() -> HashMap<KeyBind, Action> {
     map.insert(
         KeyBind {
             modifiers: ctrl_shift,
+            key: Key::Character("v".into()),
+        },
+        Action::Paste,
+    );
+    map.insert(
+        KeyBind {
+            modifiers: Modifiers::CTRL,
+            key: Key::Character("c".into()),
+        },
+        Action::CopyOrSigint,
+    );
+    map.insert(
+        KeyBind {
+            modifiers: Modifiers::CTRL,
             key: Key::Character("v".into()),
         },
         Action::Paste,
