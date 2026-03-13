@@ -2,9 +2,10 @@ use std::collections::HashMap;
 use std::io;
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::thread;
 
 use alacritty_terminal::event::{Event, EventListener, Notify, OnResize, WindowSize};
-use alacritty_terminal::event_loop::{EventLoop, Notifier};
+use alacritty_terminal::event_loop::{EventLoop, Notifier, State as LoopState};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::sync::FairMutex;
 use alacritty_terminal::term::{Config as TermConfig, TermMode};
@@ -80,6 +81,7 @@ pub struct Terminal {
     pub needs_update: bool,
     pub id: String,
     event_rx: mpsc::UnboundedReceiver<TerminalEvent>,
+    _pty_thread: thread::JoinHandle<(EventLoop<tty::Pty, EventProxy>, LoopState)>,
 }
 
 impl Terminal {
@@ -89,6 +91,8 @@ impl Terminal {
         cols: u16,
         rows: u16,
         scrollback_lines: usize,
+        cell_width: f32,
+        cell_height: f32,
     ) -> io::Result<Self> {
         let (event_tx, event_rx) = mpsc::unbounded_channel();
 
@@ -97,8 +101,8 @@ impl Terminal {
         let size = TerminalSize {
             cols,
             rows,
-            cell_width: 8.0,
-            cell_height: 16.0,
+            cell_width,
+            cell_height,
         };
 
         let mut term_config = TermConfig::default();
@@ -132,7 +136,7 @@ impl Terminal {
             false,
         )?;
         let notifier = Notifier(pty_event_loop.channel());
-        let _pty_join_handle = pty_event_loop.spawn();
+        let pty_thread = pty_event_loop.spawn();
 
         Ok(Self {
             term,
@@ -141,6 +145,7 @@ impl Terminal {
             needs_update: true,
             id: uuid::Uuid::new_v4().to_string(),
             event_rx,
+            _pty_thread: pty_thread,
         })
     }
 
