@@ -20,32 +20,28 @@
 			settingsStore.applyAppearance();
 		});
 
-		persistence.loadState().then(() => {
+		persistence.loadState().then(async () => {
 			loaded = true;
+			if (persistence.windowState) {
+				const win = getCurrentWindow();
+				const ws = persistence.windowState;
+				await win.setSize(new (await import('@tauri-apps/api/dpi')).PhysicalSize(ws.width, ws.height));
+				await win.setPosition(new (await import('@tauri-apps/api/dpi')).PhysicalPosition(ws.x, ws.y));
+			}
 		});
 
 		let unlistenClose: (() => void) | null = null;
 
 		getCurrentWindow().onCloseRequested(async () => {
-			await persistence.saveState();
 			const win = getCurrentWindow();
 			const size = await win.innerSize();
 			const pos = await win.innerPosition();
-			try {
-				const { invoke } = await import('@tauri-apps/api/core');
-				await invoke('save_app_state', {
-					data: JSON.stringify({
-						windowState: {
-							width: size.width,
-							height: size.height,
-							x: pos.x,
-							y: pos.y,
-						}
-					}),
-				});
-			} catch (e) {
-				console.error('Failed to save window state:', e);
-			}
+			await persistence.saveState({
+				width: size.width,
+				height: size.height,
+				x: pos.x,
+				y: pos.y,
+			});
 		}).then((fn) => {
 			unlistenClose = fn;
 		});

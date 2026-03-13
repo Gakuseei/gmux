@@ -2,19 +2,40 @@ import { invoke } from '@tauri-apps/api/core';
 import { appStore } from './app.svelte';
 import type { Workspace, Folder } from '$lib/types/workspace';
 
+interface WindowState {
+	width: number;
+	height: number;
+	x: number;
+	y: number;
+}
+
 interface PersistedState {
 	workspaces: Workspace[];
 	folders: Folder[];
 	sidebarWidth: number;
 	sidebarMinimized: boolean;
 	activeWorkspaceId: string | null;
+	windowState?: WindowState;
+	recentPaths?: unknown[];
 }
 
 class PersistenceStore {
 	private saveTimeout: ReturnType<typeof setTimeout> | null = null;
+	windowState: WindowState | null = null;
 
-	async saveState() {
+	async saveState(windowState?: WindowState) {
+		const raw = await invoke<string | null>('load_app_state');
+		let existing: Record<string, unknown> = {};
+		if (raw) {
+			try {
+				existing = JSON.parse(raw);
+			} catch (e) {
+				console.error('Failed to parse existing state:', e);
+			}
+		}
+
 		const state: PersistedState = {
+			...existing,
 			workspaces: appStore.workspaces.map((ws) => ({
 				...ws,
 				sessions: ws.sessions.map((s) => ({ ...s, notificationCount: 0 }))
@@ -24,6 +45,11 @@ class PersistenceStore {
 			sidebarMinimized: appStore.sidebarMinimized,
 			activeWorkspaceId: appStore.activeWorkspaceId
 		};
+
+		if (windowState) {
+			state.windowState = windowState;
+		}
+
 		await invoke('save_app_state', { data: JSON.stringify(state) });
 	}
 
@@ -57,6 +83,10 @@ class PersistenceStore {
 
 		if (state.activeWorkspaceId) {
 			appStore.activeWorkspaceId = state.activeWorkspaceId;
+		}
+
+		if (state.windowState) {
+			this.windowState = state.windowState;
 		}
 	}
 
