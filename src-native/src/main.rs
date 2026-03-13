@@ -120,6 +120,7 @@ enum Message {
     UsagePeriodChange(String),
     GitSelectFile(String),
     GitBackFromDiff,
+    GitSwitchBranch(String),
 }
 
 impl App {
@@ -538,14 +539,17 @@ impl App {
             }
             Message::InsightsTabSwitch(tab) => {
                 self.active_insights_tab = tab.clone();
-                if tab == InsightsTab::Git {
-                    if let Some(ws) = self.workspaces.get(self.active_workspace) {
-                        let cwd = ws.cwd.to_string_lossy().to_string();
-                        self.git_branch = git::get_current_branch(cwd.clone()).ok().flatten();
-                        self.git_branches = git::get_branches(cwd.clone()).unwrap_or_default();
-                        self.git_files = git::get_git_status(cwd).unwrap_or_default();
+                match tab {
+                    InsightsTab::Git => {
+                        self.refresh_git_data();
                         self.git_diff = None;
                     }
+                    InsightsTab::Usage => {
+                        if let Ok(data) = usage::get_usage_data(self.usage_period.clone()) {
+                            self.usage_data = Some(data);
+                        }
+                    }
+                    InsightsTab::Info => {}
                 }
             }
             Message::InsightsRefresh => {
@@ -554,12 +558,7 @@ impl App {
                         self.usage_data = usage::get_usage_data(self.usage_period.clone()).ok();
                     }
                     InsightsTab::Git => {
-                        if let Some(ws) = self.workspaces.get(self.active_workspace) {
-                            let cwd = ws.cwd.to_string_lossy().to_string();
-                            self.git_branch = git::get_current_branch(cwd.clone()).ok().flatten();
-                            self.git_branches = git::get_branches(cwd.clone()).unwrap_or_default();
-                            self.git_files = git::get_git_status(cwd).unwrap_or_default();
-                        }
+                        self.refresh_git_data();
                     }
                     InsightsTab::Info => {}
                 }
@@ -576,6 +575,16 @@ impl App {
             }
             Message::GitBackFromDiff => {
                 self.git_diff = None;
+            }
+            Message::GitSwitchBranch(branch) => {
+                if let Some(ws) = self.workspaces.get(self.active_workspace) {
+                    let cwd = ws.cwd.to_string_lossy().to_string();
+                    if git::switch_branch(cwd.clone(), branch).is_ok() {
+                        self.git_branch = git::get_current_branch(cwd.clone()).ok().flatten();
+                        self.git_files = git::get_git_status(cwd).unwrap_or_default();
+                        self.git_diff = None;
+                    }
+                }
             }
         }
         iced::Task::none()
@@ -1271,6 +1280,99 @@ impl App {
             ..Default::default()
         });
 
+        let rate_limit_card: Element<'_, Message> = {
+            let rate_limits = self.config.rate_limits.get("claude").cloned().unwrap_or_default();
+            let now = chrono::Utc::now();
+            let five_hours_ago = now - chrono::Duration::hours(5);
+
+            let five_hour_used: u64 = sessions
+                .iter()
+                .filter(|s| {
+                    chrono::DateTime::parse_from_rfc3339(&s.timestamp)
+                        .map(|t| t >= five_hours_ago)
+                        .unwrap_or(false)
+                })
+                .map(|s| s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_write_tokens)
+                .sum();
+
+            let weekly_used: u64 = sessions
+                .iter()
+                .map(|s| s.input_tokens + s.output_tokens + s.cache_read_tokens + s.cache_write_tokens)
+                .sum();
+
+            let make_rate_bar = |label: String, used: u64, limit: u64| -> Element<'_, Message> {
+                if limit == 0 {
+                    return Space::new().height(0).into();
+                }
+                let pct = (used as f64 / limit as f64 * 100.0).min(100.0);
+                let bar_color = if pct >= 90.0 {
+                    ui.status_deleted.to_iced()
+                } else if pct >= 70.0 {
+                    ui.status_modified.to_iced()
+                } else {
+                    ui.accent.to_iced()
+                };
+                let bar_bg_color = ui.hover_overlay.to_iced_alpha(0.06);
+                let fill_portion = ((pct * 100.0) as u16).max(1);
+                let empty_portion = (10000_u16).saturating_sub(fill_portion).max(1);
+
+                let usage_label = text(label)
+                    .size(font_size * 0.8)
+                    .color(text_secondary);
+                let usage_value = text(format!("{} / {}", Self::format_tokens(used), Self::format_tokens(limit)))
+                    .size(font_size * 0.8)
+                    .color(text_primary);
+
+                let bar_fill: Element<'_, Message> = container(Space::new().width(Length::Fill).height(6))
+                    .style(move |_theme: &Theme| container::Style {
+                        background: Some(Background::Color(bar_color)),
+                        border: Border { radius: 3.0.into(), ..Default::default() },
+                        ..Default::default()
+                    })
+                    .width(Length::FillPortion(fill_portion))
+                    .into();
+
+                let bar_empty: Element<'_, Message> = container(Space::new().width(Length::Fill).height(6))
+                    .style(move |_theme: &Theme| container::Style {
+                        background: Some(Background::Color(bar_bg_color)),
+                        border: Border { radius: 3.0.into(), ..Default::default() },
+                        ..Default::default()
+                    })
+                    .width(Length::FillPortion(empty_portion))
+                    .into();
+
+                column![
+                    row![usage_label, Space::new().width(Length::Fill), usage_value]
+                        .align_y(iced::Alignment::Center),
+                    row![bar_fill, bar_empty].spacing(0),
+                ]
+                .spacing(4)
+                .into()
+            };
+
+            let rate_header = text("RATE LIMITS")
+                .size(font_size * 0.7)
+                .color(text_secondary);
+
+            let five_hour_bar = make_rate_bar(String::from("5h Window"), five_hour_used, rate_limits.five_hour_limit);
+            let weekly_bar = make_rate_bar(String::from("Weekly"), weekly_used, rate_limits.weekly_limit);
+
+            container(
+                column![rate_header, five_hour_bar, weekly_bar].spacing(8).padding(16),
+            )
+            .width(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(surface_bg)),
+                border: Border {
+                    width: 1.0,
+                    color: border_color,
+                    radius: 6.0.into(),
+                },
+                ..Default::default()
+            })
+            .into()
+        };
+
         let sessions_header = text("SESSIONS")
             .size(font_size * 0.7)
             .color(text_secondary);
@@ -1283,8 +1385,10 @@ impl App {
                     + Self::token_cost(session.cache_read_tokens, cost_rates.cache_read)
                     + Self::token_cost(session.cache_write_tokens, cost_rates.cache_write);
 
-                let id_display = if session.session_id.len() > 12 {
-                    format!("{}...", &session.session_id[..12])
+                const SESSION_ID_DISPLAY_LEN: usize = 12;
+                let id_display = if session.session_id.len() > SESSION_ID_DISPLAY_LEN {
+                    let truncated: String = session.session_id.chars().take(SESSION_ID_DISPLAY_LEN).collect();
+                    format!("{truncated}...")
                 } else {
                     session.session_id.clone()
                 };
@@ -1329,7 +1433,7 @@ impl App {
         let sessions_list =
             scrollable(column(session_items).spacing(4)).height(Length::Fill);
 
-        let content = column![toolbar, token_card, sessions_header, sessions_list]
+        let content = column![toolbar, token_card, rate_limit_card, sessions_header, sessions_list]
             .spacing(12)
             .padding(20)
             .width(Length::Fill);
@@ -1421,14 +1525,13 @@ impl App {
                 .into();
         }
 
-        let branch_display = match &self.git_branch {
-            Some(name) => format!("Branch: {}", name),
-            None => String::from("No git repository"),
-        };
-
-        let branch_text = text(branch_display)
-            .size(font_size)
-            .color(text_primary);
+        let branch_names: Vec<String> = self.git_branches.iter().map(|b| b.name.clone()).collect();
+        let branch_picker = pick_list(
+            branch_names,
+            self.git_branch.clone(),
+            Message::GitSwitchBranch,
+        )
+        .text_size(font_size * 0.9);
 
         let refresh_btn = button(
             text("\u{21BB}")
@@ -1439,7 +1542,7 @@ impl App {
         .padding([4, 8])
         .style(Self::ghost_button_style(text_secondary, hover_color));
 
-        let header_row = row![branch_text, Space::new().width(Length::Fill), refresh_btn]
+        let header_row = row![branch_picker, Space::new().width(Length::Fill), refresh_btn]
             .align_y(iced::Alignment::Center);
 
         let files_header = text("CHANGED FILES")
@@ -1451,9 +1554,9 @@ impl App {
             .iter()
             .map(|file| {
                 let (status_char, status_color) = match file.status.as_str() {
-                    "added" => ("A", iced::Color::from_rgb(0.3, 0.8, 0.3)),
-                    "deleted" => ("D", iced::Color::from_rgb(0.9, 0.3, 0.3)),
-                    _ => ("M", iced::Color::from_rgb(0.9, 0.7, 0.2)),
+                    "added" => ("A", ui.status_added.to_iced()),
+                    "deleted" => ("D", ui.status_deleted.to_iced()),
+                    _ => ("M", ui.status_modified.to_iced()),
                 };
 
                 let stats = format!("+{} -{}", file.additions, file.deletions);
@@ -1918,6 +2021,15 @@ impl App {
             | shortcuts::Action::FontSizeIncrease
             | shortcuts::Action::FontSizeDecrease
             | shortcuts::Action::FontSizeReset => iced::Task::none(),
+        }
+    }
+
+    fn refresh_git_data(&mut self) {
+        if let Some(ws) = self.workspaces.get(self.active_workspace) {
+            let cwd = ws.cwd.to_string_lossy().to_string();
+            self.git_branch = git::get_current_branch(cwd.clone()).ok().flatten();
+            self.git_branches = git::get_branches(cwd.clone()).unwrap_or_default();
+            self.git_files = git::get_git_status(cwd).unwrap_or_default();
         }
     }
 

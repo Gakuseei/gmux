@@ -37,6 +37,9 @@ pub struct UiTheme {
     pub hover_overlay: Color,
     pub hover_overlay_alpha: f32,
     pub active_highlight_alpha: f32,
+    pub status_added: Color,
+    pub status_deleted: Color,
+    pub status_modified: Color,
 }
 
 impl Color {
@@ -137,6 +140,9 @@ impl Default for UiTheme {
             hover_overlay: Color { r: 255, g: 255, b: 255 },
             hover_overlay_alpha: 0.05,
             active_highlight_alpha: 0.15,
+            status_added: Color::from_hex("4ade80"),
+            status_deleted: Color::from_hex("f87171"),
+            status_modified: Color::from_hex("fbbf24"),
         }
     }
 }
