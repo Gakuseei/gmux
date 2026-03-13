@@ -18,6 +18,7 @@ pub fn run() {
             commands::write_pty,
             commands::resize_pty,
             commands::kill_pty,
+            commands::ack_terminal_data,
 
             commands::get_default_shell,
             config::save_app_state,

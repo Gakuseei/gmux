@@ -5,7 +5,7 @@
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { SearchAddon } from '@xterm/addon-search';
 	import '@xterm/xterm/css/xterm.css';
-	import { createPty, writePty, resizePty, killPty, saveScrollback, loadScrollback } from './terminal-bridge';
+	import { createPty, writePty, resizePty, killPty, ackTerminalData, saveScrollback, loadScrollback } from './terminal-bridge';
 	import { appStore } from '$lib/stores/app.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { notifications } from '$lib/stores/notifications.svelte';
@@ -106,7 +106,7 @@
 		let fitAddon: FitAddon | null = null;
 		let resizeObserver: ResizeObserver | null = null;
 		let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
-		let rafId: number | null = null;
+		let coalesceTimer: ReturnType<typeof setTimeout> | null = null;
 		let disposed = false;
 
 		const setup = async () => {
@@ -158,9 +158,10 @@
 
 			const decoder = new TextDecoder();
 			const pendingChunks: Uint8Array[] = [];
+			const COALESCE_MS = 5;
 
 			function flushWrites() {
-				rafId = null;
+				coalesceTimer = null;
 				if (disposed || !term || pendingChunks.length === 0) return;
 				const total = pendingChunks.reduce((sum, c) => sum + c.length, 0);
 				const merged = new Uint8Array(total);
@@ -171,6 +172,7 @@
 				}
 				pendingChunks.length = 0;
 				term.write(merged);
+				ackTerminalData(total);
 				const text = decoder.decode(merged, { stream: true });
 				lineBuffer(text);
 				if (onData) {
@@ -180,8 +182,8 @@
 
 			function queueWrite(data: Uint8Array) {
 				pendingChunks.push(data);
-				if (rafId === null) {
-					rafId = requestAnimationFrame(flushWrites);
+				if (coalesceTimer === null) {
+					coalesceTimer = setTimeout(flushWrites, COALESCE_MS);
 				}
 			}
 
@@ -254,7 +256,7 @@
 
 		return () => {
 			disposed = true;
-			if (rafId) cancelAnimationFrame(rafId);
+			if (coalesceTimer) clearTimeout(coalesceTimer);
 			if (resizeTimeout) clearTimeout(resizeTimeout);
 			if (resizeObserver) resizeObserver.disconnect();
 			if (term) {

@@ -1,17 +1,8 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 
 type TerminalEvent =
-	| { event: 'output'; data: { data: string } }
+	| { event: 'output'; data: { data: number[] } }
 	| { event: 'exit'; data: { code: number | null } };
-
-function decodeBase64(encoded: string): Uint8Array {
-	const binary = atob(encoded);
-	const bytes = new Uint8Array(binary.length);
-	for (let i = 0; i < binary.length; i++) {
-		bytes[i] = binary.charCodeAt(i);
-	}
-	return bytes;
-}
 
 export async function createPty(
 	shell: string,
@@ -25,7 +16,7 @@ export async function createPty(
 
 	channel.onmessage = (msg) => {
 		if (msg.event === 'output') {
-			onData(decodeBase64(msg.data.data));
+			onData(new Uint8Array(msg.data.data));
 		} else if (msg.event === 'exit') {
 			onExit(msg.data.code);
 		}
@@ -50,6 +41,10 @@ export async function resizePty(id: string, rows: number, cols: number): Promise
 
 export async function killPty(id: string): Promise<void> {
 	await invoke('kill_pty', { id });
+}
+
+export async function ackTerminalData(bytes: number): Promise<void> {
+	await invoke('ack_terminal_data', { bytes });
 }
 
 export async function saveScrollback(terminalId: string, content: string): Promise<void> {

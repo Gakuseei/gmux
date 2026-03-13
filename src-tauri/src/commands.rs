@@ -1,8 +1,8 @@
 use crate::pty::PtyManager;
-use base64::Engine;
 use std::io::Read;
 use std::path::Path;
 use std::process::Command;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::ipc::Channel;
 use tauri::State;
@@ -77,7 +77,7 @@ pub fn check_cli_exists(command: String) -> Result<bool, String> {
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum TerminalEvent {
-    Output { data: String },
+    Output { data: Vec<u8> },
     Exit { code: Option<u32> },
 }
 
@@ -105,29 +105,56 @@ pub fn create_pty(
     Ok(id)
 }
 
+const BACKPRESSURE_HIGH_WATERMARK: usize = 512 * 1024;
+const BACKPRESSURE_LOW_WATERMARK: usize = 128 * 1024;
+const BACKPRESSURE_SLEEP: std::time::Duration = std::time::Duration::from_millis(1);
+
+static PENDING_BYTES: AtomicUsize = AtomicUsize::new(0);
+
 fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, on_event: Channel<TerminalEvent>) {
     tauri::async_runtime::spawn_blocking(move || {
         let mut buf = [0u8; 65536];
         loop {
+            while PENDING_BYTES.load(Ordering::Relaxed) > BACKPRESSURE_HIGH_WATERMARK {
+                std::thread::sleep(BACKPRESSURE_SLEEP);
+                if PENDING_BYTES.load(Ordering::Relaxed) <= BACKPRESSURE_LOW_WATERMARK {
+                    break;
+                }
+            }
+
             match reader.read(&mut buf) {
                 Ok(0) => {
-                    on_event.send(TerminalEvent::Exit { code: None }).ok();
+                    let _ = on_event.send(TerminalEvent::Exit { code: None });
                     break;
                 }
                 Ok(n) => {
-                    let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
-                    on_event
-                        .send(TerminalEvent::Output { data: encoded })
-                        .ok();
+                    PENDING_BYTES.fetch_add(n, Ordering::Relaxed);
+                    if on_event
+                        .send(TerminalEvent::Output {
+                            data: buf[..n].to_vec(),
+                        })
+                        .is_err()
+                    {
+                        break;
+                    }
                 }
                 Err(e) => {
                     eprintln!("PTY reader error: {e}");
-                    on_event.send(TerminalEvent::Exit { code: None }).ok();
+                    let _ = on_event.send(TerminalEvent::Exit { code: None });
                     break;
                 }
             }
         }
     });
+}
+
+#[tauri::command]
+pub fn ack_terminal_data(bytes: usize) {
+    PENDING_BYTES
+        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
+            Some(current.saturating_sub(bytes))
+        })
+        .ok();
 }
 
 #[tauri::command]
