@@ -8,6 +8,7 @@
 	import TerminalView from '$lib/components/terminal/TerminalView.svelte';
 	import InsightsView from '$lib/components/insights/InsightsView.svelte';
 	import NewWorkspaceModal from '$lib/components/workspace/NewWorkspaceModal.svelte';
+	import { initKeybindings } from '$lib/utils/keybindings';
 
 	let loaded = $state(false);
 
@@ -21,8 +22,11 @@
 		};
 		window.addEventListener('beforeunload', handleBeforeUnload);
 
+		const cleanupKeybindings = initKeybindings();
+
 		return () => {
 			window.removeEventListener('beforeunload', handleBeforeUnload);
+			cleanupKeybindings();
 		};
 	});
 
