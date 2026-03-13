@@ -1,8 +1,8 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use iced::widget::{button, column, container, pane_grid, row, text};
-use iced::{Element, Font, Length, Size, Theme};
+use iced::widget::{button, column, container, pane_grid, row, scrollable, text, Space};
+use iced::{Background, Border, Element, Font, Length, Size, Theme};
 
 mod config;
 mod terminal;
@@ -13,7 +13,7 @@ mod workspace;
 use crate::config::Config;
 use crate::terminal::TerminalEvent;
 use crate::terminal_box::TerminalBox;
-use crate::theme::ColorScheme;
+use crate::theme::{ColorScheme, UiTheme};
 use crate::workspace::{PaneContent, Workspace};
 
 fn main() -> iced::Result {
@@ -35,6 +35,8 @@ struct App {
     active_workspace: usize,
     config: Config,
     color_scheme: ColorScheme,
+    ui_theme: UiTheme,
+    sidebar_visible: bool,
     title: String,
 }
 
@@ -60,12 +62,17 @@ enum Message {
     TabActivate(pane_grid::Pane, usize),
     TabNext,
     TabPrev,
+
+    SidebarToggle,
+    WorkspaceActivate(usize),
+    WorkspaceNew,
 }
 
 impl App {
     fn new() -> Self {
         let config = Config::load();
         let color_scheme = ColorScheme::gmux_dark();
+        let ui_theme = UiTheme::default();
 
         let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
         let workspace = Workspace::new("Default", &home, &config);
@@ -80,6 +87,8 @@ impl App {
             active_workspace: 0,
             config,
             color_scheme,
+            ui_theme,
+            sidebar_visible: true,
             title: String::from("gmux"),
         }
     }
@@ -357,17 +366,195 @@ impl App {
                     }
                 }
             }
+            Message::SidebarToggle => {
+                self.sidebar_visible = !self.sidebar_visible;
+            }
+            Message::WorkspaceActivate(idx) => {
+                if idx < self.workspaces.len() {
+                    self.active_workspace = idx;
+                    if let Some(ws) = self.workspaces.get(self.active_workspace)
+                    {
+                        if let Some(content) = ws.panes.get(ws.focus) {
+                            if let Some(tab) = content.active_tab() {
+                                self.title = tab.name.clone();
+                            }
+                        }
+                    }
+                }
+            }
+            Message::WorkspaceNew => {
+                let home =
+                    dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+                let name =
+                    format!("Workspace {}", self.workspaces.len() + 1);
+                if let Some(ws) = Workspace::new(&name, &home, &self.config) {
+                    self.workspaces.push(ws);
+                    self.active_workspace = self.workspaces.len() - 1;
+                }
+            }
         }
         iced::Task::none()
     }
 
-    fn view(&self) -> Element<'_, Message> {
-        if self.workspaces.is_empty() {
-            return container(text("No workspace"))
-                .center(Length::Fill)
-                .into();
-        }
+    fn sidebar_view(&self) -> Element<'_, Message> {
+        let ui = &self.ui_theme;
+        let font_size = self.config.appearance.font_size as f32;
 
+        let sidebar_bg = ui.bg_sidebar.to_iced();
+        let text_primary = ui.text_primary.to_iced();
+        let text_secondary = ui.text_secondary.to_iced();
+        let accent = ui.accent.to_iced();
+        let border_color = ui.border.to_iced();
+
+        let new_ws_btn = button(
+            text("+ New Workspace")
+                .size(font_size * 0.85)
+                .color(text_primary),
+        )
+        .on_press(Message::WorkspaceNew)
+        .padding([8, 12])
+        .width(Length::Fill)
+        .style(move |_theme: &Theme, status| {
+            let bg = match status {
+                button::Status::Hovered | button::Status::Pressed => {
+                    Some(Background::Color(accent))
+                }
+                _ => None,
+            };
+            button::Style {
+                background: bg,
+                text_color: text_primary,
+                border: Border::default(),
+                ..button::Style::default()
+            }
+        });
+
+        let header = container(
+            text("WORKSPACES")
+                .size(font_size * 0.7)
+                .color(text_secondary),
+        )
+        .padding([8, 12]);
+
+        let workspace_items: Vec<Element<'_, Message>> = self
+            .workspaces
+            .iter()
+            .enumerate()
+            .map(|(idx, ws)| {
+                let is_active = idx == self.active_workspace;
+                let name_color = if is_active { accent } else { text_primary };
+                let bg_color = if is_active {
+                    iced::Color::from_rgba8(16, 163, 127, 0.15)
+                } else {
+                    iced::Color::TRANSPARENT
+                };
+
+                let indicator: Element<'_, Message> = if is_active {
+                    container(Space::new().width(3).height(Length::Fill))
+                        .style(move |_theme: &Theme| container::Style {
+                            background: Some(Background::Color(accent)),
+                            ..Default::default()
+                        })
+                        .height(Length::Fill)
+                        .into()
+                } else {
+                    Space::new().width(3).height(0).into()
+                };
+
+                let label = text(&ws.name).size(font_size * 0.85).color(name_color);
+
+                let ws_btn = button(row![indicator, label].spacing(8).align_y(iced::Alignment::Center))
+                    .on_press(Message::WorkspaceActivate(idx))
+                    .padding([6, 12])
+                    .width(Length::Fill)
+                    .style(move |_theme: &Theme, status| {
+                        let hover_bg = match status {
+                            button::Status::Hovered => {
+                                Some(Background::Color(iced::Color::from_rgba8(
+                                    255, 255, 255, 0.05,
+                                )))
+                            }
+                            _ => Some(Background::Color(bg_color)),
+                        };
+                        button::Style {
+                            background: hover_bg,
+                            text_color: name_color,
+                            border: Border::default(),
+                            ..button::Style::default()
+                        }
+                    });
+
+                ws_btn.into()
+            })
+            .collect();
+
+        let ws_list = scrollable(column(workspace_items).spacing(2))
+            .height(Length::Fill);
+
+        let separator = container(Space::new().width(Length::Fill).height(1)).style(
+            move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(border_color)),
+                ..Default::default()
+            },
+        );
+
+        let minimize_btn = button(
+            text("\u{2039}")
+                .size(font_size)
+                .color(text_secondary),
+        )
+        .on_press(Message::SidebarToggle)
+        .padding([4, 8])
+        .style(move |_theme: &Theme, status| {
+            let bg = match status {
+                button::Status::Hovered | button::Status::Pressed => {
+                    Some(Background::Color(iced::Color::from_rgba8(
+                        255, 255, 255, 0.05,
+                    )))
+                }
+                _ => None,
+            };
+            button::Style {
+                background: bg,
+                text_color: text_secondary,
+                border: Border::default(),
+                ..button::Style::default()
+            }
+        });
+
+        let bottom_row = container(
+            row![Space::new().width(Length::Fill), minimize_btn]
+                .align_y(iced::Alignment::Center),
+        )
+        .padding([4, 8]);
+
+        let sidebar_content = column![
+            new_ws_btn,
+            header,
+            ws_list,
+            separator,
+            bottom_row,
+        ]
+        .spacing(0);
+
+        let sidebar_width = self.config.appearance.font_size as f32 * 18.0;
+
+        container(sidebar_content)
+            .width(sidebar_width)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(sidebar_bg)),
+                border: Border {
+                    width: 1.0,
+                    color: border_color,
+                    ..Default::default()
+                },
+                ..Default::default()
+            })
+            .into()
+    }
+
+    fn pane_grid_view(&self) -> Element<'_, Message> {
         let workspace = &self.workspaces[self.active_workspace];
         let font_size = self.config.appearance.font_size as f32;
         let color_scheme = &self.color_scheme;
@@ -459,6 +646,56 @@ impl App {
         .spacing(2);
 
         grid.into()
+    }
+
+    fn view(&self) -> Element<'_, Message> {
+        if self.workspaces.is_empty() {
+            return container(text("No workspace"))
+                .center(Length::Fill)
+                .into();
+        }
+
+        let grid = self.pane_grid_view();
+
+        if self.sidebar_visible {
+            let sidebar = self.sidebar_view();
+            row![sidebar, grid].into()
+        } else {
+            let ui = &self.ui_theme;
+            let text_secondary = ui.text_secondary.to_iced();
+            let font_size = self.config.appearance.font_size as f32;
+
+            let expand_btn = button(
+                text("\u{203A}")
+                    .size(font_size)
+                    .color(text_secondary),
+            )
+            .on_press(Message::SidebarToggle)
+            .padding([4, 4])
+            .style(move |_theme: &Theme, status| {
+                let bg = match status {
+                    button::Status::Hovered | button::Status::Pressed => {
+                        Some(Background::Color(iced::Color::from_rgba8(
+                            255, 255, 255, 0.1,
+                        )))
+                    }
+                    _ => None,
+                };
+                button::Style {
+                    background: bg,
+                    text_color: text_secondary,
+                    border: Border::default(),
+                    ..button::Style::default()
+                }
+            });
+
+            let expand_col = container(
+                column![Space::new().height(Length::Fill), expand_btn]
+            )
+            .height(Length::Fill);
+
+            row![expand_col, grid].into()
+        }
     }
 
     fn move_focus(&mut self, direction: pane_grid::Direction) {
