@@ -1,0 +1,37 @@
+export interface TerminalSession {
+	id: string;
+	name: string;
+	shell: string;
+	cwd: string;
+	command?: string;
+	bypassPermissions?: boolean;
+	status: 'running' | 'needs-input' | 'ready' | 'exited';
+	notificationCount: number;
+}
+
+export interface SplitNode {
+	type: 'terminal' | 'split';
+	direction?: 'horizontal' | 'vertical';
+	ratio?: number;
+	terminalId?: string;
+	children?: SplitNode[];
+}
+
+export interface Workspace {
+	id: string;
+	name: string;
+	folderId?: string;
+	cwd: string;
+	layout: SplitNode;
+	sessions: TerminalSession[];
+	createdAt: string;
+}
+
+export interface Folder {
+	id: string;
+	name: string;
+	collapsed: boolean;
+}
+
+export type AppView = 'terminals' | 'insights';
+export type InsightsTab = 'usage' | 'git' | 'info';
