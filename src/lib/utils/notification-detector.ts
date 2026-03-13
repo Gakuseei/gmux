@@ -39,7 +39,7 @@ export function detectNotification(
 	return { matched: false, pattern: '' };
 }
 
-const FLUSH_TIMEOUT_MS = 500;
+const FLUSH_TIMEOUT_MS = 150;
 
 export function createLineBuffer(onLine: (line: string) => void): (chunk: string) => void {
 	let buffer = '';

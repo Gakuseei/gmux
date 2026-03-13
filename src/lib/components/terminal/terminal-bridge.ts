@@ -54,3 +54,7 @@ export async function saveScrollback(terminalId: string, content: string): Promi
 export async function loadScrollback(terminalId: string): Promise<string | null> {
 	return await invoke<string | null>('load_scrollback', { terminalId });
 }
+
+export async function deleteScrollback(terminalId: string): Promise<void> {
+	await invoke('delete_scrollback', { terminalId });
+}

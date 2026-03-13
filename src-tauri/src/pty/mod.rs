@@ -18,9 +18,11 @@ impl PtyInstance {
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16) -> anyhow::Result<()> {
+        let clamped_rows = rows.clamp(1, 500);
+        let clamped_cols = cols.clamp(1, 1000);
         self.master.resize(PtySize {
-            rows,
-            cols,
+            rows: clamped_rows,
+            cols: clamped_cols,
             pixel_width: 0,
             pixel_height: 0,
         })?;

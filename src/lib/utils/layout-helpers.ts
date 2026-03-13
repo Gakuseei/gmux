@@ -1,13 +1,26 @@
 import type { SplitNode, TerminalSession } from '$lib/types/workspace';
 
+export function findFirstTerminalId(node: SplitNode): string | null {
+	if (node.type === 'terminal') return node.terminalId;
+	for (const child of node.children) {
+		const id = findFirstTerminalId(child);
+		if (id) return id;
+	}
+	return null;
+}
+
+const MAX_SPLIT_DEPTH = 8;
+
 export function splitNode(
 	layout: SplitNode,
 	terminalId: string,
 	direction: 'horizontal' | 'vertical',
-	newSession: TerminalSession
+	newSession: TerminalSession,
+	depth: number = 0
 ): SplitNode {
 	if (layout.type === 'terminal') {
 		if (layout.terminalId === terminalId) {
+			if (depth >= MAX_SPLIT_DEPTH) return { ...layout };
 			return {
 				type: 'split',
 				direction,
@@ -23,7 +36,10 @@ export function splitNode(
 
 	return {
 		...layout,
-		children: layout.children?.map((child) => splitNode(child, terminalId, direction, newSession))
+		children: [
+			splitNode(layout.children[0], terminalId, direction, newSession, depth + 1),
+			splitNode(layout.children[1], terminalId, direction, newSession, depth + 1)
+		]
 	};
 }
 
@@ -31,8 +47,6 @@ export function removeNode(layout: SplitNode, terminalId: string): SplitNode | n
 	if (layout.type === 'terminal') {
 		return layout.terminalId === terminalId ? null : { ...layout };
 	}
-
-	if (!layout.children || layout.children.length !== 2) return { ...layout };
 
 	const newChildren = layout.children.map((child) => removeNode(child, terminalId));
 
@@ -42,7 +56,7 @@ export function removeNode(layout: SplitNode, terminalId: string): SplitNode | n
 
 	return {
 		...layout,
-		children: newChildren as SplitNode[]
+		children: newChildren as [SplitNode, SplitNode]
 	};
 }
 

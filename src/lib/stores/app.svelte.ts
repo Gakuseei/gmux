@@ -13,8 +13,27 @@ class AppStore {
 	showSettings = $state(false);
 	version = $state(0);
 
+	private sessionIndex = new Map<string, { workspaceId: string; session: TerminalSession }>();
+
 	private bump() {
 		this.version++;
+	}
+
+	private rebuildSessionIndex() {
+		this.sessionIndex.clear();
+		for (const ws of this.workspaces) {
+			for (const s of ws.sessions) {
+				this.sessionIndex.set(s.id, { workspaceId: ws.id, session: s });
+			}
+		}
+	}
+
+	private indexSession(workspaceId: string, session: TerminalSession) {
+		this.sessionIndex.set(session.id, { workspaceId, session });
+	}
+
+	private unindexSession(sessionId: string) {
+		this.sessionIndex.delete(sessionId);
 	}
 
 	get activeWorkspace(): Workspace | undefined {
@@ -39,16 +58,26 @@ class AppStore {
 
 	addWorkspace(ws: Workspace) {
 		this.workspaces.push(ws);
+		for (const s of ws.sessions) {
+			this.indexSession(ws.id, s);
+		}
 		this.activeWorkspaceId = ws.id;
 		this.bump();
 	}
 
 	removeWorkspace(id: string) {
+		const ws = this.workspaces.find((w) => w.id === id);
+		if (ws) {
+			for (const s of ws.sessions) {
+				this.unindexSession(s.id);
+			}
+		}
 		this.workspaces = this.workspaces.filter((w) => w.id !== id);
 		if (this.activeWorkspaceId === id) {
 			this.activeWorkspaceId = this.workspaces[0]?.id ?? null;
 		}
 		this.bump();
+		return ws?.sessions.map((s) => s.id) ?? [];
 	}
 
 	renameWorkspace(id: string, name: string) {
@@ -97,57 +126,59 @@ class AppStore {
 		const f = this.folders.find((f) => f.id === id);
 		if (f) {
 			f.collapsed = !f.collapsed;
-			this.bump();
 		}
 	}
 
 	toggleSidebar() {
 		this.sidebarMinimized = !this.sidebarMinimized;
-		this.bump();
 	}
 
 	addSessionToWorkspace(workspaceId: string, session: TerminalSession) {
 		const ws = this.workspaces.find((w) => w.id === workspaceId);
 		if (ws) {
 			ws.sessions.push(session);
+			this.indexSession(workspaceId, session);
+			this.bump();
+		}
+	}
+
+	removeSessionFromWorkspace(workspaceId: string, sessionId: string) {
+		const ws = this.workspaces.find((w) => w.id === workspaceId);
+		if (ws) {
+			ws.sessions = ws.sessions.filter((s) => s.id !== sessionId);
+			this.unindexSession(sessionId);
 			this.bump();
 		}
 	}
 
 	updateSessionStatus(sessionId: string, status: TerminalSession['status']) {
-		for (const ws of this.workspaces) {
-			const s = ws.sessions.find((s) => s.id === sessionId);
-			if (s) {
-				s.status = status;
-				this.bump();
-				break;
-			}
+		const entry = this.sessionIndex.get(sessionId);
+		if (entry) {
+			entry.session.status = status;
+			this.bump();
 		}
 	}
 
 	incrementNotification(sessionId: string) {
-		for (const ws of this.workspaces) {
-			const s = ws.sessions.find((s) => s.id === sessionId);
-			if (s) {
-				s.notificationCount++;
-				this.bump();
-				break;
-			}
+		const entry = this.sessionIndex.get(sessionId);
+		if (entry) {
+			entry.session.notificationCount++;
 		}
 	}
 
 	clearNotification(sessionId: string) {
-		for (const ws of this.workspaces) {
-			const s = ws.sessions.find((s) => s.id === sessionId);
-			if (s) {
-				s.notificationCount = 0;
-				if (s.status === 'needs-input') {
-					s.status = 'running';
-				}
-				this.bump();
-				break;
+		const entry = this.sessionIndex.get(sessionId);
+		if (entry) {
+			entry.session.notificationCount = 0;
+			if (entry.session.status === 'needs-input') {
+				entry.session.status = 'running';
 			}
 		}
+	}
+
+	setWorkspaces(workspaces: Workspace[]) {
+		this.workspaces = workspaces;
+		this.rebuildSessionIndex();
 	}
 }
 

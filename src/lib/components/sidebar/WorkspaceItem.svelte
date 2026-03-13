@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { Workspace } from '$lib/types/workspace';
 	import { appStore } from '$lib/stores/app.svelte';
+	import { deleteScrollback } from '$lib/components/terminal/terminal-bridge';
 	import ContextMenu from './ContextMenu.svelte';
 
 	let {
@@ -94,7 +95,12 @@
 					}
 				]
 			: []),
-		{ label: 'Close', action: () => appStore.removeWorkspace(workspace.id), danger: true }
+		{ label: 'Close', action: () => {
+			const sessionIds = appStore.removeWorkspace(workspace.id);
+			for (const id of sessionIds) {
+				deleteScrollback(id).catch(() => {});
+			}
+		}, danger: true }
 	]);
 </script>
 

@@ -61,13 +61,42 @@ class PersistenceStore {
 		});
 	}
 
+	private validateState(parsed: unknown): PersistedState | null {
+		if (!parsed || typeof parsed !== 'object') return null;
+		const obj = parsed as Record<string, unknown>;
+		if (!Array.isArray(obj.workspaces)) return null;
+		for (const ws of obj.workspaces) {
+			if (!ws || typeof ws !== 'object') return null;
+			const w = ws as Record<string, unknown>;
+			if (typeof w.id !== 'string' || typeof w.name !== 'string') return null;
+			if (!Array.isArray(w.sessions)) return null;
+			for (const s of w.sessions) {
+				if (!s || typeof s !== 'object') return null;
+				const sess = s as Record<string, unknown>;
+				if (typeof sess.id !== 'string' || typeof sess.name !== 'string') return null;
+			}
+			if (!w.layout || typeof w.layout !== 'object') return null;
+		}
+		if (obj.folders !== undefined && !Array.isArray(obj.folders)) return null;
+		return parsed as PersistedState;
+	}
+
 	async loadState() {
 		const raw = await invoke<string | null>('load_app_state');
 		if (!raw) return;
-		const state: PersistedState = JSON.parse(raw);
+
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(raw);
+		} catch {
+			return;
+		}
+
+		const state = this.validateState(parsed);
+		if (!state) return;
 
 		if (state.workspaces) {
-			appStore.workspaces = state.workspaces.map((ws) => ({
+			appStore.setWorkspaces(state.workspaces.map((ws) => ({
 				...ws,
 				sessions: ws.sessions.map((s) => ({
 					...s,
@@ -75,7 +104,7 @@ class PersistenceStore {
 					status: 'ready' as const,
 					notificationCount: 0
 				}))
-			}));
+			})));
 		}
 
 		if (state.folders) {

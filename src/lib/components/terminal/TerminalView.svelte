@@ -1,9 +1,10 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/app.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
-	import { splitNode, removeNode } from '$lib/utils/layout-helpers';
+	import { splitNode, removeNode, findFirstTerminalId } from '$lib/utils/layout-helpers';
 	import type { TerminalSession } from '$lib/types/workspace';
 	import SplitContainer from './SplitContainer.svelte';
+	import { deleteScrollback } from './terminal-bridge';
 
 	function handleSplit(terminalId: string, direction: 'horizontal' | 'vertical') {
 		const ws = appStore.activeWorkspace;
@@ -29,7 +30,8 @@
 		const newLayout = removeNode(ws.layout, terminalId);
 		if (newLayout) {
 			ws.layout = newLayout;
-			ws.sessions = ws.sessions.filter((s) => s.id !== terminalId);
+			appStore.removeSessionFromWorkspace(ws.id, terminalId);
+			deleteScrollback(terminalId).catch(() => {});
 		}
 	}
 
@@ -43,16 +45,6 @@
 		}
 	}
 
-	function findFirstTerminalId(node: import('$lib/types/workspace').SplitNode): string | null {
-		if (node.type === 'terminal') return node.terminalId ?? null;
-		if (node.children) {
-			for (const child of node.children) {
-				const id = findFirstTerminalId(child);
-				if (id) return id;
-			}
-		}
-		return null;
-	}
 </script>
 
 <div class="terminal-view">

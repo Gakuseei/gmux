@@ -147,7 +147,8 @@
 			try {
 				const { WebglAddon } = await import('@xterm/addon-webgl');
 				term.loadAddon(new WebglAddon());
-			} catch {
+			} catch (e) {
+				console.warn('WebGL addon failed to load, falling back to canvas renderer:', e);
 			}
 
 			fitAddon.fit();
@@ -158,7 +159,9 @@
 
 			const decoder = new TextDecoder();
 			const pendingChunks: Uint8Array[] = [];
+			let pendingBytes = 0;
 			const COALESCE_MS = 5;
+			const PENDING_CAP = 1024 * 1024;
 
 			function flushWrites() {
 				coalesceTimer = null;
@@ -171,6 +174,7 @@
 					offset += chunk.length;
 				}
 				pendingChunks.length = 0;
+				pendingBytes = 0;
 				term.write(merged);
 				ackTerminalData(total);
 				const text = decoder.decode(merged, { stream: true });
@@ -181,7 +185,13 @@
 			}
 
 			function queueWrite(data: Uint8Array) {
+				while (pendingBytes + data.length > PENDING_CAP && pendingChunks.length > 0) {
+					const dropped = pendingChunks.shift()!;
+					pendingBytes -= dropped.length;
+					ackTerminalData(dropped.length);
+				}
 				pendingChunks.push(data);
+				pendingBytes += data.length;
 				if (coalesceTimer === null) {
 					coalesceTimer = setTimeout(flushWrites, COALESCE_MS);
 				}

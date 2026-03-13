@@ -25,6 +25,7 @@ pub fn run() {
             config::load_app_state,
             config::save_scrollback,
             config::load_scrollback,
+            config::delete_scrollback,
             config::save_settings,
             config::load_settings,
             git::get_current_branch,

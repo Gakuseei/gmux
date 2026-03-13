@@ -1,5 +1,5 @@
 <script lang="ts">
-	import type { SplitNode, Workspace } from '$lib/types/workspace';
+	import type { SplitNode, SplitBranchNode, Workspace } from '$lib/types/workspace';
 	import PaneHeader from './PaneHeader.svelte';
 	import TerminalPane from './TerminalPane.svelte';
 	import SplitContainer from './SplitContainer.svelte';
@@ -17,10 +17,11 @@
 		onSplit: (terminalId: string, direction: 'horizontal' | 'vertical') => void;
 		onClose: (terminalId: string) => void;
 		onTerminalData?: (terminalId: string, data: string) => void;
-		onRatioChange?: (node: SplitNode, newRatio: number) => void;
+		onRatioChange?: (node: SplitBranchNode, newRatio: number) => void;
 	} = $props();
 
-	let initialRatio = $derived(node.ratio ?? 0.5);
+	let splitNode = $derived(node.type === 'split' ? node : null);
+	let initialRatio = $derived(splitNode?.ratio ?? 0.5);
 	let ratioOffset = $state(0);
 	let ratio = $derived(initialRatio + ratioOffset);
 	let dragging = $state(false);
@@ -28,7 +29,7 @@
 	let lastKnownRatio = $state(0.5);
 
 	$effect(() => {
-		const current = node.ratio ?? 0.5;
+		const current = splitNode?.ratio ?? 0.5;
 		if (current !== lastKnownRatio && !dragging) {
 			ratioOffset = 0;
 		}
@@ -44,6 +45,7 @@
 	}
 
 	function onDividerMouseDown(e: MouseEvent) {
+		if (!splitNode) return;
 		e.preventDefault();
 		dragging = true;
 
@@ -53,7 +55,7 @@
 		const rect = containerEl?.getBoundingClientRect();
 		if (!rect) return;
 
-		const isHorizontal = node.direction === 'horizontal';
+		const isHorizontal = splitNode.direction === 'horizontal';
 		let rafPending = false;
 		let latestEvent: MouseEvent = e;
 
@@ -75,10 +77,11 @@
 			dragging = false;
 			window.removeEventListener('mousemove', onMouseMove);
 			window.removeEventListener('mouseup', onMouseUp);
+			if (!splitNode) return;
 			const finalRatio = Math.min(RATIO_MAX, Math.max(RATIO_MIN, initialRatio + ratioOffset));
-			node.ratio = finalRatio;
+			splitNode.ratio = finalRatio;
 			if (onRatioChange) {
-				onRatioChange(node, finalRatio);
+				onRatioChange(splitNode, finalRatio);
 			}
 		}
 
@@ -87,14 +90,16 @@
 	}
 
 	function adjustRatio(delta: number) {
+		if (!splitNode) return;
 		const newRatio = Math.min(RATIO_MAX, Math.max(RATIO_MIN, ratio + delta));
 		ratioOffset = newRatio - initialRatio;
-		node.ratio = newRatio;
-		if (onRatioChange) onRatioChange(node, newRatio);
+		splitNode.ratio = newRatio;
+		if (onRatioChange) onRatioChange(splitNode, newRatio);
 	}
 
 	function onDividerKeydown(e: KeyboardEvent) {
-		const isHorizontal = node.direction === 'horizontal';
+		if (!splitNode) return;
+		const isHorizontal = splitNode.direction === 'horizontal';
 		const increaseKey = isHorizontal ? 'ArrowRight' : 'ArrowDown';
 		const decreaseKey = isHorizontal ? 'ArrowLeft' : 'ArrowUp';
 
@@ -109,14 +114,14 @@
 </script>
 
 {#if node.type === 'terminal'}
-	{@const session = findSession(node.terminalId ?? '')}
+	{@const session = findSession(node.terminalId)}
 	{#if session}
 		<div class="terminal-pane">
 			<PaneHeader
 				{session}
-				onSplitHorizontal={() => onSplit(node.terminalId!, 'horizontal')}
-				onSplitVertical={() => onSplit(node.terminalId!, 'vertical')}
-				onClose={() => onClose(node.terminalId!)}
+				onSplitHorizontal={() => onSplit(node.terminalId, 'horizontal')}
+				onSplitVertical={() => onSplit(node.terminalId, 'vertical')}
+				onClose={() => onClose(node.terminalId)}
 			/>
 			<div class="terminal-content">
 				<TerminalPane
@@ -130,7 +135,7 @@
 			</div>
 		</div>
 	{/if}
-{:else if node.children && node.children.length === 2}
+{:else}
 	<div
 		bind:this={containerEl}
 		class="split-container"

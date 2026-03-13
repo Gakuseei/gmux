@@ -45,18 +45,49 @@ class SettingsStore {
 		prevPane: 'Ctrl+Shift+Tab',
 	});
 
+	private validateAndAssign<T extends Record<string, unknown>>(target: T, source: unknown): void {
+		if (!source || typeof source !== 'object') return;
+		const src = source as Record<string, unknown>;
+		for (const key of Object.keys(target)) {
+			if (!(key in src)) continue;
+			const defaultVal = target[key];
+			const newVal = src[key];
+			if (typeof defaultVal === 'number') {
+				if (typeof newVal === 'number' && Number.isFinite(newVal) && newVal >= 0) {
+					(target as Record<string, unknown>)[key] = newVal;
+				}
+			} else if (typeof defaultVal === 'boolean') {
+				if (typeof newVal === 'boolean') {
+					(target as Record<string, unknown>)[key] = newVal;
+				}
+			} else if (typeof defaultVal === 'string') {
+				if (typeof newVal === 'string') {
+					(target as Record<string, unknown>)[key] = newVal;
+				}
+			} else if (Array.isArray(defaultVal)) {
+				if (Array.isArray(newVal)) {
+					(target as Record<string, unknown>)[key] = newVal;
+				}
+			} else if (typeof defaultVal === 'object' && defaultVal !== null) {
+				if (typeof newVal === 'object' && newVal !== null && !Array.isArray(newVal)) {
+					(target as Record<string, unknown>)[key] = newVal;
+				}
+			}
+		}
+	}
+
 	async load() {
 		try {
 			const raw = await invoke<string | null>('load_settings');
 			if (raw) {
 				const parsed = JSON.parse(raw);
-				if (parsed.appearance) Object.assign(this.appearance, parsed.appearance);
-				if (parsed.terminal) Object.assign(this.terminal, parsed.terminal);
-				if (parsed.aiClis) Object.assign(this.aiClis, parsed.aiClis);
-				if (parsed.rateLimits) Object.assign(this.rateLimits, parsed.rateLimits);
-				if (parsed.notifications) Object.assign(this.notifications, parsed.notifications);
-				if (parsed.costRates) Object.assign(this.costRates, parsed.costRates);
-				if (parsed.keybindings) Object.assign(this.keybindings, parsed.keybindings);
+				if (parsed.appearance) this.validateAndAssign(this.appearance, parsed.appearance);
+				if (parsed.terminal) this.validateAndAssign(this.terminal, parsed.terminal);
+				if (parsed.aiClis) this.validateAndAssign(this.aiClis, parsed.aiClis);
+				if (parsed.rateLimits) this.validateAndAssign(this.rateLimits, parsed.rateLimits);
+				if (parsed.notifications) this.validateAndAssign(this.notifications, parsed.notifications);
+				if (parsed.costRates) this.validateAndAssign(this.costRates, parsed.costRates);
+				if (parsed.keybindings) this.validateAndAssign(this.keybindings, parsed.keybindings);
 			}
 		} catch (e) {
 			console.error('Failed to load settings:', e);

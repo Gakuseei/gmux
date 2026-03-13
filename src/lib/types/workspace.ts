@@ -10,13 +10,19 @@ export interface TerminalSession {
 	notificationCount: number;
 }
 
-export interface SplitNode {
-	type: 'terminal' | 'split';
-	direction?: 'horizontal' | 'vertical';
-	ratio?: number;
-	terminalId?: string;
-	children?: SplitNode[];
+export interface TerminalNode {
+	type: 'terminal';
+	terminalId: string;
 }
+
+export interface SplitBranchNode {
+	type: 'split';
+	direction: 'horizontal' | 'vertical';
+	ratio: number;
+	children: [SplitNode, SplitNode];
+}
+
+export type SplitNode = TerminalNode | SplitBranchNode;
 
 export interface Workspace {
 	id: string;

@@ -1,6 +1,7 @@
 import { appStore } from '$lib/stores/app.svelte';
 import { settingsStore } from '$lib/stores/settings.svelte';
-import { splitNode, removeNode } from '$lib/utils/layout-helpers';
+import { splitNode, removeNode, findFirstTerminalId } from '$lib/utils/layout-helpers';
+import { deleteScrollback } from '$lib/components/terminal/terminal-bridge';
 import type { SplitNode, TerminalSession } from '$lib/types/workspace';
 
 function parseShortcut(shortcut: string): { ctrl: boolean; shift: boolean; alt: boolean; key: string } {
@@ -24,24 +25,11 @@ function matchesShortcut(event: KeyboardEvent, shortcut: string): boolean {
 	);
 }
 
-function findFirstTerminalId(node: SplitNode): string | null {
-	if (node.type === 'terminal') return node.terminalId ?? null;
-	if (node.children) {
-		for (const child of node.children) {
-			const id = findFirstTerminalId(child);
-			if (id) return id;
-		}
-	}
-	return null;
-}
-
 function collectTerminalIds(node: SplitNode): string[] {
-	if (node.type === 'terminal') return node.terminalId ? [node.terminalId] : [];
+	if (node.type === 'terminal') return [node.terminalId];
 	const ids: string[] = [];
-	if (node.children) {
-		for (const child of node.children) {
-			ids.push(...collectTerminalIds(child));
-		}
+	for (const child of node.children) {
+		ids.push(...collectTerminalIds(child));
 	}
 	return ids;
 }
@@ -94,10 +82,12 @@ export function initKeybindings(): () => void {
 			closePane: () => {
 				const ws = appStore.activeWorkspace;
 				if (!ws || !appStore.activeTerminalId) return;
-				const newLayout = removeNode(ws.layout, appStore.activeTerminalId);
+				const closedId = appStore.activeTerminalId;
+				const newLayout = removeNode(ws.layout, closedId);
 				if (newLayout) {
-					ws.sessions = ws.sessions.filter((s) => s.id !== appStore.activeTerminalId);
 					ws.layout = newLayout;
+					appStore.removeSessionFromWorkspace(ws.id, closedId);
+					deleteScrollback(closedId).catch(() => {});
 					appStore.activeTerminalId = findFirstTerminalId(newLayout);
 				}
 			},
