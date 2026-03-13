@@ -5,6 +5,9 @@
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import '@xterm/xterm/css/xterm.css';
 	import { createPty, writePty, resizePty, killPty } from './terminal-bridge';
+	import { appStore } from '$lib/stores/app.svelte';
+	import { notifications } from '$lib/stores/notifications.svelte';
+	import { detectNotification, createLineBuffer } from '$lib/utils/notification-detector';
 
 	let {
 		terminalId,
@@ -21,6 +24,18 @@
 		onTitleChange?: (title: string) => void;
 		onData?: (data: string) => void;
 	} = $props();
+
+	const lineBuffer = createLineBuffer((line) => {
+		const result = detectNotification(line);
+		if (result.matched && appStore.activeTerminalId !== terminalId) {
+			notifications.notify(terminalId, result.pattern);
+		}
+	});
+
+	function handleContainerClick() {
+		appStore.activeTerminalId = terminalId;
+		notifications.clear(terminalId);
+	}
 
 	let containerEl: HTMLDivElement | undefined = $state();
 	let ptyId: string | null = $state(null);
@@ -66,6 +81,8 @@
 				term.onTitleChange(onTitleChange);
 			}
 
+			const decoder = new TextDecoder();
+
 			const id = await createPty(
 				shell,
 				cwd,
@@ -74,9 +91,10 @@
 				(data) => {
 					if (disposed || !term) return;
 					term.write(data);
+					const text = decoder.decode(data, { stream: true });
+					lineBuffer(text);
 					if (onData) {
-						const decoder = new TextDecoder();
-						onData(decoder.decode(data));
+						onData(text);
 					}
 				},
 				(code) => {
@@ -131,7 +149,9 @@
 	});
 </script>
 
-<div bind:this={containerEl} class="terminal-container"></div>
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div bind:this={containerEl} class="terminal-container" onclick={handleContainerClick}></div>
 
 <style>
 	.terminal-container {
