@@ -17,6 +17,10 @@ use crate::theme::{ColorScheme, UiTheme};
 use crate::workspace::{PaneContent, Workspace};
 
 fn main() -> iced::Result {
+    if cfg!(target_os = "linux") && std::env::var("WGPU_BACKEND").is_err() {
+        std::env::set_var("WGPU_BACKEND", "gl");
+    }
+
     let config = Config::load();
     let window_width = config.appearance.font_size as f32 * 100.0;
     let window_height = config.appearance.font_size as f32 * 40.0;
