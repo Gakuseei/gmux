@@ -3,13 +3,7 @@
 	import { usageStore } from '$lib/stores/usage.svelte';
 	import { settingsStore } from '$lib/stores/settings.svelte';
 
-	const COST_RATES: Record<string, { input: number; output: number; cacheRead: number; cacheWrite: number }> = {
-		claude: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
-		codex: { input: 2.5, output: 10, cacheRead: 0.25, cacheWrite: 3 },
-		gemini: { input: 1.25, output: 5, cacheRead: 0.3, cacheWrite: 1.25 },
-	};
-
-	let rates = $derived(COST_RATES.claude);
+	let rates = $derived(settingsStore.costRates.claude);
 	let fiveHourLimit = $derived(settingsStore.rateLimits.claude.fiveHourLimit);
 	let weeklyLimit = $derived(settingsStore.rateLimits.claude.weeklyLimit);
 

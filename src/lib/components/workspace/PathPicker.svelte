@@ -111,7 +111,6 @@
 		color: var(--text-primary);
 		padding: 8px 10px;
 		font-size: 13px;
-		outline: none;
 	}
 
 	.path-input:focus {

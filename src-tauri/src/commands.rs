@@ -1,4 +1,5 @@
 use crate::pty::PtyManager;
+use base64::Engine;
 use futures::future::join_all;
 use std::io::Read;
 use std::process::Command;
@@ -44,7 +45,7 @@ pub fn check_cli_exists(command: String) -> Result<bool, String> {
 #[derive(Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase", tag = "event", content = "data")]
 pub enum TerminalEvent {
-    Output { data: Vec<u8> },
+    Output { data: String },
     Exit { code: Option<u32> },
 }
 
@@ -78,10 +79,9 @@ fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, on_event: Channel<Termi
                     break;
                 }
                 Ok(n) => {
+                    let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
                     on_event
-                        .send(TerminalEvent::Output {
-                            data: buf[..n].to_vec(),
-                        })
+                        .send(TerminalEvent::Output { data: encoded })
                         .ok();
                 }
                 Err(_) => {
@@ -166,12 +166,11 @@ fn spawn_batch_reader_thread(
                     break;
                 }
                 Ok(n) => {
+                    let encoded = base64::engine::general_purpose::STANDARD.encode(&buf[..n]);
                     on_event
                         .send(BatchTerminalEvent {
                             index,
-                            event: TerminalEvent::Output {
-                                data: buf[..n].to_vec(),
-                            },
+                            event: TerminalEvent::Output { data: encoded },
                         })
                         .ok();
                 }

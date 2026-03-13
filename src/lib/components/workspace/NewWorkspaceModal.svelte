@@ -4,6 +4,7 @@
 	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { generateLayout } from '$lib/utils/layout-helpers';
 	import { spawnBatch } from '$lib/components/terminal/terminal-bridge';
+	import { createFocusTrap } from '$lib/utils/focus-trap';
 	import PathPicker from './PathPicker.svelte';
 	import LayoutPicker from './LayoutPicker.svelte';
 	import AgentPicker from './AgentPicker.svelte';
@@ -31,7 +32,7 @@
 	let selectedLayout = $state('single');
 	let agents = $state<AgentConfig[]>([
 		{ type: 'claude', label: 'Claude Code', command: 'claude', count: 0, bypassPermissions: false },
-		{ type: 'codex', label: 'Codex CLI', command: 'codex', count: 0 },
+		{ type: 'codex', label: 'Codex CLI', command: 'codex', count: 0, bypassPermissions: false },
 		{ type: 'gemini', label: 'Gemini CLI', command: 'gemini', count: 0 },
 		{ type: 'shell', label: 'Shell', command: '', count: 0 }
 	]);
@@ -60,7 +61,7 @@
 			case 'claude':
 				return agent.bypassPermissions ? 'claude --dangerously-skip-permissions' : 'claude';
 			case 'codex':
-				return 'codex --dangerously-bypass-approvals-and-sandbox';
+				return agent.bypassPermissions ? 'codex --dangerously-bypass-approvals-and-sandbox' : 'codex';
 			case 'gemini':
 				return 'gemini';
 			default:
@@ -80,7 +81,7 @@
 					shell: defaultShell,
 					cwd: cwd || '~',
 					command: buildCommand(agent) || undefined,
-					bypassPermissions: agent.type === 'claude' ? agent.bypassPermissions : undefined,
+					bypassPermissions: (agent.type === 'claude' || agent.type === 'codex') ? agent.bypassPermissions : undefined,
 					status: 'ready',
 					notificationCount: 0
 				});
@@ -158,6 +159,14 @@
 	function handleBackdropClick(e: MouseEvent) {
 		if (e.target === e.currentTarget) close();
 	}
+
+	let modalEl: HTMLDivElement | undefined = $state();
+
+	$effect(() => {
+		if (!modalEl) return;
+		const cleanup = createFocusTrap(modalEl);
+		return cleanup;
+	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -165,9 +174,9 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="backdrop" onclick={handleBackdropClick} onkeydown={handleKeydown}>
 	<!-- svelte-ignore a11y_interactive_supports_focus -->
-	<div class="modal" role="dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+	<div bind:this={modalEl} class="modal" role="dialog" aria-modal="true" aria-labelledby="new-workspace-title" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 		<div class="modal-header">
-			<h2>New Workspace</h2>
+			<h2 id="new-workspace-title">New Workspace</h2>
 			<button class="close-btn" onclick={close}>&times;</button>
 		</div>
 
@@ -291,7 +300,6 @@
 		color: var(--text-primary);
 		padding: 8px 10px;
 		font-size: 13px;
-		outline: none;
 	}
 
 	.text-input:focus {

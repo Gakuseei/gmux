@@ -159,7 +159,6 @@
 		padding: 1px 4px;
 		border-radius: 3px;
 		flex: 1;
-		outline: none;
 		text-transform: none;
 	}
 

@@ -99,7 +99,6 @@
 		color: var(--text-primary);
 		padding: 8px 10px;
 		font-size: 13px;
-		outline: none;
 		width: 100%;
 	}
 

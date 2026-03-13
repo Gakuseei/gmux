@@ -130,7 +130,6 @@
 		color: var(--text-primary);
 		padding: 8px 10px;
 		font-size: 13px;
-		outline: none;
 		width: 100%;
 	}
 
@@ -202,7 +201,6 @@
 		height: 34px;
 		text-align: center;
 		font-size: 13px;
-		outline: none;
 		appearance: textfield;
 		-moz-appearance: textfield;
 	}

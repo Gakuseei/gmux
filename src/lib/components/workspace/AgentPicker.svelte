@@ -62,7 +62,7 @@
 						disabled={assignedSlots >= totalSlots}
 					>+</button>
 				</div>
-				{#if agent.type === 'claude'}
+				{#if agent.type === 'claude' || agent.type === 'codex'}
 					<label class="bypass-label">
 						<input
 							type="checkbox"

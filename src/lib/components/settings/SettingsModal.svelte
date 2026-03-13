@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { appStore } from '$lib/stores/app.svelte';
+	import { createFocusTrap } from '$lib/utils/focus-trap';
 	import AppearanceSettings from './AppearanceSettings.svelte';
 	import TerminalSettings from './TerminalSettings.svelte';
 	import AiCliSettings from './AiCliSettings.svelte';
@@ -31,6 +32,14 @@
 	function handleBackdropClick(e: MouseEvent) {
 		if (e.target === e.currentTarget) close();
 	}
+
+	let modalEl: HTMLDivElement | undefined = $state();
+
+	$effect(() => {
+		if (!modalEl) return;
+		const cleanup = createFocusTrap(modalEl);
+		return cleanup;
+	});
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -38,9 +47,9 @@
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="backdrop" onclick={handleBackdropClick} onkeydown={handleKeydown}>
 	<!-- svelte-ignore a11y_interactive_supports_focus -->
-	<div class="modal" role="dialog" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
+	<div bind:this={modalEl} class="modal" role="dialog" aria-modal="true" aria-labelledby="settings-modal-title" onclick={(e) => e.stopPropagation()} onkeydown={(e) => e.stopPropagation()}>
 		<div class="modal-header">
-			<h2>Settings</h2>
+			<h2 id="settings-modal-title">Settings</h2>
 			<button class="close-btn" onclick={close}>&times;</button>
 		</div>
 

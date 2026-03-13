@@ -191,7 +191,6 @@
 		padding: 1px 4px;
 		border-radius: 3px;
 		width: 100%;
-		outline: none;
 	}
 
 	.sessions {

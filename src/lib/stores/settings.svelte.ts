@@ -28,6 +28,11 @@ class SettingsStore {
 		soundEnabled: false,
 		customPatterns: [] as string[],
 	});
+	costRates = $state({
+		claude: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+		codex: { input: 2.5, output: 10, cacheRead: 0.25, cacheWrite: 3 },
+		gemini: { input: 1.25, output: 5, cacheRead: 0.3, cacheWrite: 1.25 },
+	});
 	keybindings = $state({
 		splitHorizontal: 'Ctrl+Shift+D',
 		splitVertical: 'Ctrl+Shift+R',
@@ -50,6 +55,7 @@ class SettingsStore {
 				if (parsed.aiClis) Object.assign(this.aiClis, parsed.aiClis);
 				if (parsed.rateLimits) Object.assign(this.rateLimits, parsed.rateLimits);
 				if (parsed.notifications) Object.assign(this.notifications, parsed.notifications);
+				if (parsed.costRates) Object.assign(this.costRates, parsed.costRates);
 				if (parsed.keybindings) Object.assign(this.keybindings, parsed.keybindings);
 			}
 		} catch (e) {
@@ -73,6 +79,7 @@ class SettingsStore {
 			aiClis: { ...this.aiClis },
 			rateLimits: { ...this.rateLimits },
 			notifications: { ...this.notifications },
+			costRates: { ...this.costRates },
 			keybindings: { ...this.keybindings },
 		});
 		try {

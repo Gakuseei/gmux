@@ -300,7 +300,6 @@
 		color: var(--text-primary);
 		font-size: 12px;
 		padding: 3px 8px;
-		outline: none;
 	}
 
 	.search-input:focus {

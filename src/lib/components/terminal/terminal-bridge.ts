@@ -1,8 +1,17 @@
 import { invoke, Channel } from '@tauri-apps/api/core';
 
 type TerminalEvent =
-	| { event: 'output'; data: { data: number[] } }
+	| { event: 'output'; data: { data: string } }
 	| { event: 'exit'; data: { code: number | null } };
+
+function decodeBase64(encoded: string): Uint8Array {
+	const binary = atob(encoded);
+	const bytes = new Uint8Array(binary.length);
+	for (let i = 0; i < binary.length; i++) {
+		bytes[i] = binary.charCodeAt(i);
+	}
+	return bytes;
+}
 
 export async function createPty(
 	shell: string,
@@ -16,7 +25,7 @@ export async function createPty(
 
 	channel.onmessage = (msg) => {
 		if (msg.event === 'output') {
-			onData(new Uint8Array(msg.data.data));
+			onData(decodeBase64(msg.data.data));
 		} else if (msg.event === 'exit') {
 			onExit(msg.data.code);
 		}
@@ -67,7 +76,7 @@ export async function spawnBatch(
 		const cb = callbacks[msg.index];
 		if (!cb) return;
 		if (msg.event.event === 'output') {
-			cb.onData(new Uint8Array(msg.event.data.data));
+			cb.onData(decodeBase64(msg.event.data.data));
 		} else if (msg.event.event === 'exit') {
 			cb.onExit(msg.event.data.code);
 		}

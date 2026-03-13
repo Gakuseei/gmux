@@ -152,7 +152,6 @@
 		color: var(--text-primary);
 		padding: 6px 8px;
 		font-size: 13px;
-		outline: none;
 		width: 100%;
 	}
 

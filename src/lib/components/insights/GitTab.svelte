@@ -195,7 +195,6 @@
 		border-radius: var(--radius-button);
 		font-family: var(--font-code);
 		cursor: pointer;
-		outline: none;
 	}
 
 	.branch-select:focus {
