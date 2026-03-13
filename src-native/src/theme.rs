@@ -34,6 +34,9 @@ pub struct UiTheme {
     pub diff_add: Color,
     pub diff_delete: Color,
     pub notification: Color,
+    pub hover_overlay: Color,
+    pub hover_overlay_alpha: f32,
+    pub active_highlight_alpha: f32,
 }
 
 impl Color {
@@ -52,6 +55,15 @@ impl Color {
             self.r as f32 / 255.0,
             self.g as f32 / 255.0,
             self.b as f32 / 255.0,
+        )
+    }
+
+    pub fn to_iced_alpha(&self, alpha: f32) -> iced::Color {
+        iced::Color::from_rgba(
+            self.r as f32 / 255.0,
+            self.g as f32 / 255.0,
+            self.b as f32 / 255.0,
+            alpha,
         )
     }
 
@@ -122,6 +134,9 @@ impl Default for UiTheme {
             diff_add: Color::from_hex("#212922"),
             diff_delete: Color::from_hex("#3c170f"),
             notification: Color::from_hex("#3b82f6"),
+            hover_overlay: Color { r: 255, g: 255, b: 255 },
+            hover_overlay_alpha: 0.05,
+            active_highlight_alpha: 0.15,
         }
     }
 }
