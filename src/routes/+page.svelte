@@ -8,11 +8,17 @@
 	import TerminalView from '$lib/components/terminal/TerminalView.svelte';
 	import InsightsView from '$lib/components/insights/InsightsView.svelte';
 	import NewWorkspaceModal from '$lib/components/workspace/NewWorkspaceModal.svelte';
+	import SettingsModal from '$lib/components/settings/SettingsModal.svelte';
+	import { settingsStore } from '$lib/stores/settings.svelte';
 	import { initKeybindings } from '$lib/utils/keybindings';
 
 	let loaded = $state(false);
 
 	onMount(() => {
+		settingsStore.load().then(() => {
+			settingsStore.applyAppearance();
+		});
+
 		persistence.loadState().then(() => {
 			loaded = true;
 		});
@@ -65,6 +71,10 @@
 
 {#if appStore.showNewWorkspaceModal}
 	<NewWorkspaceModal />
+{/if}
+
+{#if appStore.showSettings}
+	<SettingsModal />
 {/if}
 
 <style>
