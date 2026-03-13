@@ -1,6 +1,7 @@
 use iced::{Element, Font, Size, Theme};
 
 mod config;
+mod theme;
 
 fn main() -> iced::Result {
     iced::application(App::new, App::update, App::view)
