@@ -107,7 +107,7 @@ pub fn create_pty(
 
 fn spawn_reader_thread(mut reader: Box<dyn Read + Send>, on_event: Channel<TerminalEvent>) {
     tauri::async_runtime::spawn_blocking(move || {
-        let mut buf = [0u8; 4096];
+        let mut buf = [0u8; 65536];
         loop {
             match reader.read(&mut buf) {
                 Ok(0) => {

@@ -1,9 +1,9 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import { Terminal } from '@xterm/xterm';
 	import { FitAddon } from '@xterm/addon-fit';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { SearchAddon } from '@xterm/addon-search';
-	import { CanvasAddon } from '@xterm/addon-canvas';
 	import '@xterm/xterm/css/xterm.css';
 	import { createPty, writePty, resizePty, killPty, saveScrollback, loadScrollback } from './terminal-bridge';
 	import { appStore } from '$lib/stores/app.svelte';
@@ -106,6 +106,7 @@
 		let fitAddon: FitAddon | null = null;
 		let resizeObserver: ResizeObserver | null = null;
 		let resizeTimeout: ReturnType<typeof setTimeout> | null = null;
+		let rafId: number | null = null;
 		let disposed = false;
 
 		const setup = async () => {
@@ -147,10 +148,6 @@
 				const { WebglAddon } = await import('@xterm/addon-webgl');
 				term.loadAddon(new WebglAddon());
 			} catch {
-				try {
-					term.loadAddon(new CanvasAddon());
-				} catch {
-				}
 			}
 
 			fitAddon.fit();
@@ -160,6 +157,33 @@
 			}
 
 			const decoder = new TextDecoder();
+			const pendingChunks: Uint8Array[] = [];
+
+			function flushWrites() {
+				rafId = null;
+				if (disposed || !term || pendingChunks.length === 0) return;
+				const total = pendingChunks.reduce((sum, c) => sum + c.length, 0);
+				const merged = new Uint8Array(total);
+				let offset = 0;
+				for (const chunk of pendingChunks) {
+					merged.set(chunk, offset);
+					offset += chunk.length;
+				}
+				pendingChunks.length = 0;
+				term.write(merged);
+				const text = decoder.decode(merged, { stream: true });
+				lineBuffer(text);
+				if (onData) {
+					onData(text);
+				}
+			}
+
+			function queueWrite(data: Uint8Array) {
+				pendingChunks.push(data);
+				if (rafId === null) {
+					rafId = requestAnimationFrame(flushWrites);
+				}
+			}
 
 			if (existingPtyId) {
 				ptyId = existingPtyId;
@@ -183,12 +207,7 @@
 						term.rows,
 						(data) => {
 							if (disposed || !term) return;
-							term.write(data);
-							const text = decoder.decode(data, { stream: true });
-							lineBuffer(text);
-							if (onData) {
-								onData(text);
-							}
+							queueWrite(data);
 							if (!receivedFirstOutput && pendingCommand) {
 								receivedFirstOutput = true;
 								const cmd = pendingCommand;
@@ -231,10 +250,11 @@
 			resizeObserver.observe(containerEl!);
 		};
 
-		setup();
+		untrack(() => setup());
 
 		return () => {
 			disposed = true;
+			if (rafId) cancelAnimationFrame(rafId);
 			if (resizeTimeout) clearTimeout(resizeTimeout);
 			if (resizeObserver) resizeObserver.disconnect();
 			if (term) {
