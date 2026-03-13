@@ -227,6 +227,31 @@ impl Terminal {
         result
     }
 
+    pub fn search_grid(&self, query: &str) -> usize {
+        if query.is_empty() {
+            return 0;
+        }
+        let content = self.grid_content();
+        let query_lower = query.to_lowercase();
+        content.to_lowercase().matches(&query_lower).count()
+    }
+
+    pub fn line_content(&self, line: i32) -> String {
+        let term = self.term.lock();
+        let grid = term.grid();
+        let cols = grid.columns();
+        let row = &grid[Line(line)];
+        let mut result = String::with_capacity(cols);
+        for col_idx in 0..cols {
+            let cell = &row[Column(col_idx)];
+            if cell.flags.contains(CellFlags::WIDE_CHAR_SPACER) {
+                continue;
+            }
+            result.push(cell.c);
+        }
+        result.trim_end().to_string()
+    }
+
     pub fn last_line(&self) -> String {
         let term = self.term.lock();
         let grid = term.grid();
