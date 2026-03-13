@@ -258,7 +258,6 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
         let colors = content.colors;
         let cursor = content.cursor;
         let selection = content.selection;
-        let _mode = content.mode;
         let display_offset = content.display_offset;
 
         let cell_width = self.terminal_handle.size.cell_width;
@@ -276,6 +275,8 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
         );
 
         let view_origin = bounds.position();
+
+        let mut char_buf = [0u8; 4];
 
         renderer.with_layer(bounds, |renderer: &mut iced::Renderer| {
             for indexed in content.display_iter {
@@ -333,7 +334,7 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
                 let ch = cell.c;
                 if ch != ' ' && ch != '\t' && ch != '\0' {
                     let text = iced::advanced::text::Text {
-                        content: String::from(ch),
+                        content: ch.encode_utf8(&mut char_buf).to_owned(),
                         bounds: Size::new(cell_width, cell_height),
                         size: Pixels(self.font_size),
                         line_height: iced::widget::text::LineHeight::Absolute(Pixels(cell_height)),
@@ -497,8 +498,6 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
             }
         }
 
-        let is_app_cursor = self.terminal.lock().mode().contains(TermMode::APP_CURSOR);
-
         match event {
             Event::Keyboard(KeyEvent::KeyPressed {
                 key: Key::Named(named),
@@ -507,6 +506,7 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
                 text,
                 ..
             }) if state.is_focused && named == modified_named => {
+                let is_app_cursor = self.terminal.lock().mode().contains(TermMode::APP_CURSOR);
                 let mod_no = calculate_modifier_number(&state.modifiers);
 
                 let escape_code = match named {
@@ -701,53 +701,51 @@ impl<'a, Message: Clone> Widget<Message, Theme, iced::Renderer> for TerminalBox<
                 }
             }
             Event::Mouse(MouseEvent::ButtonPressed(Button::Left)) => {
-                if cursor.position_in(bounds).is_some() {
+                if let Some(p) = cursor.position_in(bounds) {
                     state.is_focused = true;
                     state.dragging = true;
 
-                    if let Some(p) = cursor.position_in(bounds) {
-                        let col = p.x / cell_width;
-                        let row = p.y / cell_height;
+                    let col = p.x / cell_width;
+                    let row = p.y / cell_height;
 
-                        let click_kind =
-                            if let Some((prev_kind, prev_time)) = state.click.take() {
-                                if prev_time.elapsed()
-                                    < Duration::from_millis(CLICK_TIMING_MS)
-                                {
-                                    match prev_kind {
-                                        ClickKind::Single => ClickKind::Double,
-                                        ClickKind::Double => ClickKind::Triple,
-                                        ClickKind::Triple => ClickKind::Single,
-                                    }
-                                } else {
-                                    ClickKind::Single
+                    let click_kind =
+                        if let Some((prev_kind, prev_time)) = state.click.take() {
+                            if prev_time.elapsed()
+                                < Duration::from_millis(CLICK_TIMING_MS)
+                            {
+                                match prev_kind {
+                                    ClickKind::Single => ClickKind::Double,
+                                    ClickKind::Double => ClickKind::Triple,
+                                    ClickKind::Triple => ClickKind::Single,
                                 }
                             } else {
                                 ClickKind::Single
-                            };
-
-                        let location =
-                            TermPoint::new(Line(row as i32), TermColumn(col as usize));
-                        let side = if col.fract() < 0.5 {
-                            TermSide::Left
+                            }
                         } else {
-                            TermSide::Right
+                            ClickKind::Single
                         };
 
-                        let selection_type = match click_kind {
-                            ClickKind::Single => SelectionType::Simple,
-                            ClickKind::Double => SelectionType::Semantic,
-                            ClickKind::Triple => SelectionType::Lines,
-                        };
+                    let location =
+                        TermPoint::new(Line(row as i32), TermColumn(col as usize));
+                    let side = if col.fract() < 0.5 {
+                        TermSide::Left
+                    } else {
+                        TermSide::Right
+                    };
 
-                        {
-                            let mut term = self.terminal.lock();
-                            term.selection =
-                                Some(Selection::new(selection_type, location, side));
-                        }
+                    let selection_type = match click_kind {
+                        ClickKind::Single => SelectionType::Simple,
+                        ClickKind::Double => SelectionType::Semantic,
+                        ClickKind::Triple => SelectionType::Lines,
+                    };
 
-                        state.click = Some((click_kind, Instant::now()));
+                    {
+                        let mut term = self.terminal.lock();
+                        term.selection =
+                            Some(Selection::new(selection_type, location, side));
                     }
+
+                    state.click = Some((click_kind, Instant::now()));
                 }
             }
             Event::Mouse(MouseEvent::ButtonReleased(Button::Left)) => {
