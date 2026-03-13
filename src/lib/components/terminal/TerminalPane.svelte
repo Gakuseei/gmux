@@ -3,6 +3,7 @@
 	import { FitAddon } from '@xterm/addon-fit';
 	import { WebLinksAddon } from '@xterm/addon-web-links';
 	import { SearchAddon } from '@xterm/addon-search';
+	import { CanvasAddon } from '@xterm/addon-canvas';
 	import '@xterm/xterm/css/xterm.css';
 	import { createPty, writePty, resizePty, killPty, saveScrollback, loadScrollback } from './terminal-bridge';
 	import { appStore } from '$lib/stores/app.svelte';
@@ -127,7 +128,10 @@
 				cursorBlink: true,
 				cursorStyle: settingsStore.terminal.cursorStyle,
 				scrollback: settingsStore.terminal.scrollbackLines,
-				allowProposedApi: true
+				allowProposedApi: true,
+				drawBoldTextInBrightColors: false,
+				fastScrollModifier: 'alt',
+				fastScrollSensitivity: 5
 			});
 
 			fitAddon = new FitAddon();
@@ -143,6 +147,10 @@
 				const { WebglAddon } = await import('@xterm/addon-webgl');
 				term.loadAddon(new WebglAddon());
 			} catch {
+				try {
+					term.loadAddon(new CanvasAddon());
+				} catch {
+				}
 			}
 
 			fitAddon.fit();

@@ -92,8 +92,11 @@ pub fn create_pty(
 ) -> Result<String, String> {
     validate_shell_path(&shell)?;
     let mut manager = state.lock().map_err(|e| format!("lock poisoned: {e}"))?;
+    let env_vars = vec![
+        ("POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD".to_string(), "true".to_string()),
+    ];
     let (id, reader) = manager
-        .spawn(&shell, &cwd, cols, rows, vec![])
+        .spawn(&shell, &cwd, cols, rows, env_vars)
         .map_err(|e: anyhow::Error| e.to_string())?;
     drop(manager);
 

@@ -12,8 +12,10 @@ export default defineConfig(async () => ({
   build: {
     rollupOptions: {
       output: {
-        manualChunks: {
-          xterm: ["@xterm/xterm", "@xterm/addon-fit", "@xterm/addon-web-links", "@xterm/addon-search", "@xterm/addon-webgl"],
+        manualChunks(id) {
+          if (id.includes('@xterm/')) {
+            return 'xterm';
+          }
         },
       },
     },
