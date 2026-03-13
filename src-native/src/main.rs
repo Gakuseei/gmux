@@ -2,6 +2,7 @@ use iced::{Element, Font, Size, Theme};
 
 mod config;
 mod terminal;
+mod terminal_box;
 mod theme;
 
 fn main() -> iced::Result {

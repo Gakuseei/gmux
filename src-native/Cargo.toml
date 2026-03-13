@@ -5,7 +5,7 @@ edition = "2021"
 default-run = "gmux"
 
 [dependencies]
-iced = { version = "0.14", features = ["tokio"] }
+iced = { version = "0.14", features = ["tokio", "advanced"] }
 alacritty_terminal = "0.25"
 cosmic-text = { version = "0.18", features = ["monospace_fallback", "shape-run-cache"] }
 tokio = { version = "1", features = ["full"] }
