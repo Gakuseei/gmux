@@ -3,7 +3,7 @@
 	import TopBar from '$lib/components/TopBar.svelte';
 	import Sidebar from '$lib/components/sidebar/Sidebar.svelte';
 	import StatusBar from '$lib/components/statusbar/StatusBar.svelte';
-	import TerminalPane from '$lib/components/terminal/TerminalPane.svelte';
+	import TerminalView from '$lib/components/terminal/TerminalView.svelte';
 </script>
 
 <div class="app-shell" style:grid-template-columns="{appStore.sidebarMinimized ? '48px' : appStore.sidebarWidth + 'px'} 1fr">
@@ -17,7 +17,7 @@
 
 	<div class="content-area">
 		{#if appStore.activeView === 'terminals'}
-			<TerminalPane terminalId="proof-of-concept" shell="/bin/fish" cwd={"/home/eriks"} />
+			<TerminalView />
 		{:else}
 			<div class="insights-placeholder">Insights</div>
 		{/if}
